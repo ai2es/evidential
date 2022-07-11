@@ -206,18 +206,6 @@ def validate(
     return results_dict
 
 
-# def load_mlp_model(input_size, middle_size, output_size, dropout):
-#     model = nn.Sequential(
-#             nn.utils.spectral_norm(nn.Linear(input_size, middle_size)),
-#             #nn.BatchNorm1d(middle_size),
-#             nn.Dropout(dropout),
-#             nn.LeakyReLU(),
-#             #nn.Tanh(),
-#             nn.utils.spectral_norm(nn.Linear(middle_size, output_size))
-#     )
-#     return model
-
-
 def one_hot_embedding(labels, num_classes=10):
     # Convert to One Hot Encoding
     y = torch.eye(num_classes)
@@ -298,7 +286,6 @@ if __name__ == "__main__":
     
     with open(f"{save_loc}/scalers.pkl", "wb") as fid:
         joblib.dump(scaler_x, fid)
-    raise
 
     ### Use torch wrappers for convenience
     train_split = TensorDataset(
@@ -346,90 +333,90 @@ if __name__ == "__main__":
         weights = torch.from_numpy(np.array(outputvar_weights)).float().to(device)
         weights /= weights.sum()
         criterion = nn.CrossEntropyLoss(
-            #weight = weights,
+            weight = weights,
             label_smoothing = label_smoothing
         ).to(device)
 
-#     ### Load MLP model
-#     model = DNN(
-#             len(features), 
-#             len(outputs), 
-#             block_sizes = [middle_size for _ in range(num_hidden_layers)], 
-#             dr = [dropout_rate for _ in range(num_hidden_layers)], 
-#             batch_norm = batch_norm, 
-#             lng = False
-#         ).to(device)
+    ### Load MLP model
+    model = DNN(
+            len(features), 
+            len(outputs), 
+            block_sizes = [middle_size for _ in range(num_hidden_layers)], 
+            dr = [dropout_rate for _ in range(num_hidden_layers)], 
+            batch_norm = batch_norm, 
+            lng = False
+        ).to(device)
     
-#     ### Initialize an optimizer
-#     optimizer = optim.Adam(model.parameters(), 
-#                            lr=learning_rate, 
-#                            weight_decay=L2_reg)
+    ### Initialize an optimizer
+    optimizer = optim.Adam(model.parameters(), 
+                           lr=learning_rate, 
+                           weight_decay=L2_reg)
 
-#     ### Load a learning rate scheduler
-#     lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-#         optimizer, 
-#         patience = lr_patience, 
-#         verbose = verbose,
-#         min_lr = 1.0e-13
-#     )
+    ### Load a learning rate scheduler
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, 
+        patience = lr_patience, 
+        verbose = verbose,
+        min_lr = 1.0e-13
+    )
     
-#     ### Train the model
-#     results_dict = defaultdict(list)
-#     for epoch in range(epochs):
-#         ### Train one epoch
-#         train_results, model, optimizer = train_one_epoch(
-#             epoch,
-#             model,
-#             train_loader,
-#             num_classes,
-#             criterion,
-#             optimizer,
-#             batch_size,
-#             device=device,
-#             uncertainty=use_uncertainty,
-#         )
-#         ### Validate one epoch
-#         valid_results = validate(
-#             epoch,
-#             model,
-#             valid_loader,
-#             num_classes,
-#             criterion,
-#             batch_size,
-#             device=device,
-#             uncertainty=use_uncertainty,
-#             return_preds=False
-#         )
+    ### Train the model
+    results_dict = defaultdict(list)
+    for epoch in range(epochs):
+        ### Train one epoch
+        train_results, model, optimizer = train_one_epoch(
+            epoch,
+            model,
+            train_loader,
+            num_classes,
+            criterion,
+            optimizer,
+            batch_size,
+            device=device,
+            uncertainty=use_uncertainty,
+        )
+        ### Validate one epoch
+        valid_results = validate(
+            epoch,
+            model,
+            valid_loader,
+            num_classes,
+            criterion,
+            batch_size,
+            device=device,
+            uncertainty=use_uncertainty,
+            return_preds=False
+        )
         
-#         results_dict["train_loss"].append(np.mean(train_results["loss"]))
-#         results_dict["train_acc"].append(np.mean(valid_results["acc"]))
-#         results_dict["valid_loss"].append(np.mean(train_results["loss"]))
-#         results_dict["valid_acc"].append(np.mean(valid_results["acc"]))
+        results_dict["train_loss"].append(np.mean(train_results["loss"]))
+        results_dict["train_acc"].append(np.mean(valid_results["acc"]))
+        results_dict["valid_loss"].append(np.mean(train_results["loss"]))
+        results_dict["valid_acc"].append(np.mean(valid_results["acc"]))
         
-#         ### Save the dataframe to disk
-#         df = pd.DataFrame.from_dict(results_dict).reset_index()
-#         df.to_csv(f"{save_loc}/training_log.csv", index = False)
+        ### Save the dataframe to disk
+        df = pd.DataFrame.from_dict(results_dict).reset_index()
+        df.to_csv(f"{save_loc}/training_log.csv", index = False)
         
-#         ### Save the model only if its the best
-#         if results_dict["valid_acc"][-1] == max(results_dict["valid_acc"]):
-#             state_dict = {
-#                 'epoch': epoch,
-#                 'model_state_dict': model.state_dict(),
-#                 'optimizer_state_dict': optimizer.state_dict(),
-#                 'scaler_x': scaler_x,
-#                 'valid_accuracy': min(results_dict["valid_acc"])
-#             }
-#             torch.save(state_dict, f"{save_loc}/best.pt")
+        ### Save the model only if its the best
+        if results_dict["valid_acc"][-1] == max(results_dict["valid_acc"]):
+            state_dict = {
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scaler_x': scaler_x,
+                'valid_accuracy': min(results_dict["valid_acc"])
+            }
+            torch.save(state_dict, f"{save_loc}/best.pt")
         
-#         ### Update the scheduler
-#         lr_scheduler.step(1.0 - results_dict["valid_acc"][-1])
+        ### Update the scheduler
+        lr_scheduler.step(1.0 - results_dict["valid_acc"][-1])
         
-#         ### Early stopping
-#         best_epoch = [i for i,j in enumerate(
-#             results_dict["valid_acc"]) if j == max(results_dict["valid_acc"])][0]
-#         offset = epoch - best_epoch
-#         if offset >= stopping_patience:
-#             break
+        ### Early stopping
+        best_epoch = [i for i,j in enumerate(
+            results_dict["valid_acc"]) if j == max(results_dict["valid_acc"])][0]
+        offset = epoch - best_epoch
+        if offset >= stopping_patience:
+            break
             
             
     ### Evaluate with the best model
