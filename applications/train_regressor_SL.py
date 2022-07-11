@@ -142,7 +142,7 @@ def trainer(conf, trial = False, evaluate = False, verbose = True, device = None
         block_sizes = [middle_size], 
         dr = [dropout], 
         batch_norm = batch_norm, 
-        evidential = True
+        lng = True
     ).to(device)
     init_weights(model, init_type = weight_init, verbose = verbose)
 
@@ -275,7 +275,7 @@ def trainer(conf, trial = False, evaluate = False, verbose = True, device = None
             block_sizes = [middle_size], 
             dr = [dropout], 
             batch_norm = batch_norm, 
-            evidential = True
+            lng = True
         ).to(device)
         model.load_weights(f"{save_loc}/best.pt")
         
@@ -409,7 +409,7 @@ def mlp_trainer(conf, trial = False, evaluate = False, verbose = True, device = 
         block_sizes = [middle_size], 
         dr = [dropout], 
         batch_norm = batch_norm, 
-        evidential = False
+        lng = False
     ).to(device)
     init_weights(model, init_type = weight_init, verbose = verbose)
     
@@ -527,7 +527,7 @@ def mlp_trainer(conf, trial = False, evaluate = False, verbose = True, device = 
             block_sizes = [middle_size], 
             dr = [dropout], 
             batch_norm = batch_norm, 
-            evidential = False
+            lng = False
         ).to(device)
         model.load_weights(f"{save_loc}/best.pt")
         

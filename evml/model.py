@@ -3,7 +3,11 @@ import torch.nn.functional as F
 from torch.nn import init
 import torch, logging
 from torch.nn.utils import spectral_norm as SpectralNorm
-import warnings 
+import warnings
+import random
+import numpy as np
+import os
+
 warnings.filterwarnings("ignore")
 
 
@@ -14,6 +18,16 @@ def get_device():
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
     return device
+
+
+def seed_everything(seed=1234):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.deterministic = True
 
 
 def init_weights(net, init_type='normal', init_gain=0.0, verbose=True):
@@ -70,25 +84,22 @@ class DNN(torch.nn.Module):
                  block_sizes = [1000], 
                  dr = [0.5], 
                  batch_norm = True, 
-                 evidential = False):
+                 lng = False):
         
         super(DNN, self).__init__()
-        self.evidential = evidential
-        
-#         if evidential:
-#             outputSize = 4 * outputSize
+        self.lng = lng
         
         if len(block_sizes) > 0:
             blocks = self.block(inputSize, block_sizes[0], dr[0], batch_norm)
             if len(block_sizes) > 1:
                 for i in range(len(block_sizes)-1):
                     blocks += self.block(block_sizes[i], block_sizes[i+1], dr[i], batch_norm)
-            if evidential:
+            if lng:
                 blocks.append(LinearNormalGamma(block_sizes[-1], outputSize))
             else:
                 blocks.append(SpectralNorm(torch.nn.Linear(block_sizes[-1], outputSize)))
         else:
-            if evidential:
+            if lng:
                 blocks = [LinearNormalGamma(inputSize, outputSize)]
             else:
                 blocks = [SpectralNorm(torch.nn.Linear(inputSize, outputSize))]
@@ -145,9 +156,11 @@ class DNN(torch.nn.Module):
             raise
             
         device = get_device()
+        logger.info(f"Mounting the model to device {device}")
+        self.to(device) 
         self.eval()
         
-        if self.evidential:
+        if self.lng:
             with torch.no_grad():
                 if batch_size > x.shape[0]:
                     X = np.array_split(x, x.shape[0] / batch_size)

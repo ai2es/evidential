@@ -8,7 +8,7 @@ import torch.optim as optim
 from torch.utils.data.dataset import TensorDataset, Dataset
 from torch.utils.data.dataloader import DataLoader
 
-import copy
+import copy, joblib
 import time, yaml
 import torch.nn.functional as F
 import pandas as pd, numpy as np
@@ -19,19 +19,9 @@ import matplotlib.pyplot as plt
 
 from evml.reliability import reliability_diagram, reliability_diagrams, compute_calibration
 from evml.class_losses import *
+from evml.model import seed_everything, DNN
 
-
-import random, os, numpy as np
-
-
-def seed_everything(seed=1234):
-    random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.benchmark = True
-    torch.backends.cudnn.deterministic = True
+import random, os, numpy as np, sys, shutil
 
 
 def train_one_epoch(
@@ -188,7 +178,7 @@ def validate(
                 outputs = model(inputs)
                 _, preds = torch.max(outputs, 1)
                 loss = criterion(outputs, labels)
-                prob = F.softmax(output, dim=1)
+                prob = F.softmax(outputs, dim=1)
                 
                 if return_preds:
                     results_dict["pred_labels"].append(preds.unsqueeze(-1))
@@ -216,16 +206,16 @@ def validate(
     return results_dict
 
 
-def load_mlp_model(input_size, middle_size, output_size, dropout):
-    model = nn.Sequential(
-            nn.utils.spectral_norm(nn.Linear(input_size, middle_size)),
-            #nn.BatchNorm1d(middle_size),
-            nn.Dropout(dropout),
-            nn.LeakyReLU(),
-            #nn.Tanh(),
-            nn.utils.spectral_norm(nn.Linear(middle_size, output_size))
-    ) 
-    return model
+# def load_mlp_model(input_size, middle_size, output_size, dropout):
+#     model = nn.Sequential(
+#             nn.utils.spectral_norm(nn.Linear(input_size, middle_size)),
+#             #nn.BatchNorm1d(middle_size),
+#             nn.Dropout(dropout),
+#             nn.LeakyReLU(),
+#             #nn.Tanh(),
+#             nn.utils.spectral_norm(nn.Linear(middle_size, output_size))
+#     )
+#     return model
 
 
 def one_hot_embedding(labels, num_classes=10):
@@ -235,11 +225,23 @@ def one_hot_embedding(labels, num_classes=10):
 
 
 if __name__ == "__main__":
+    
+    if len(sys.argv) < 2:
+        print("Usage: python train_classifier.py model.yml")
+        sys.exit()
 
-
-    config = "config/p-type.yml"
+    config = sys.argv[1]
     with open(config) as cf:
         conf = yaml.load(cf, Loader=yaml.FullLoader)
+        
+    save_loc = conf["save_loc"]
+    os.makedirs(save_loc, exist_ok = True)
+    
+    if not os.path.isfile(os.path.join(save_loc, "model.yml")):
+        shutil.copyfile(config, os.path.join(save_loc, "model.yml"))
+    else:
+        with open(os.path.join(save_loc, "model.yml"), "w") as fid:
+            yaml.dump(conf, fid)
 
     features = conf['tempvars'] + conf['tempdewvars'] + conf['ugrdvars'] + conf['vgrdvars']
     outputs = conf['outputvars']
@@ -248,25 +250,25 @@ if __name__ == "__main__":
     train_size1 = conf['trainer']['train_size1'] # sets test size
     train_size2 = conf['trainer']['train_size2'] # sets valid size
     num_hidden_layers = conf['trainer']['num_hidden_layers']
-    hidden_sizes = conf['trainer']['hidden_sizes']
+    middle_size = conf['trainer']['hidden_sizes']
     dropout_rate = conf['trainer']['dropout_rate']
+    batch_norm = conf['trainer']['batch_norm']
     batch_size = conf['trainer']['batch_size']
     learning_rate = conf['trainer']['learning_rate']
+    label_smoothing = conf["trainer"]["label_smoothing"]
+    outputvar_weights = conf["trainer"]["outputvar_weights"]
+    L2_reg = conf['trainer']['l2_reg']
     metrics = conf['trainer']['metrics']
     run_eagerly = conf['trainer']['run_eagerly']
     shuffle = conf['trainer']['shuffle']
     epochs = conf['trainer']['epochs']
+    seed = conf["seed"]
+    verbose = conf["verbose"]
 
-    lr_patience = 3
-    stopping_patience = 10
-    verbose = True
-    save_loc = "results/categorical"
-    middle_size = 100
-    learning_rate = 1e-3
-    L2_reg = 0.005
-    seed = 1000
+    lr_patience = conf["trainer"]["lr_patience"]
+    stopping_patience = conf["trainer"]["stopping_patience"]
 
-    loss = "digamma"
+    loss = conf["trainer"]["loss"]
     use_uncertainty = False if loss == "ce" else True
     
     ### Set the seed for reproducibility
@@ -293,6 +295,10 @@ if __name__ == "__main__":
     y_train = np.argmax(train_data[outputs].to_numpy(), 1)
     y_valid = np.argmax(valid_data[outputs].to_numpy(), 1)
     y_test = np.argmax(test_data[outputs].to_numpy(), 1)
+    
+    with open(f"{save_loc}/scalers.pkl", "wb") as fid:
+        joblib.dump(scaler_x, fid)
+    raise
 
     ### Use torch wrappers for convenience
     train_split = TensorDataset(
@@ -313,10 +319,18 @@ if __name__ == "__main__":
                               batch_size=batch_size, 
                               shuffle=False, 
                               num_workers=0)
+    
+    test_split = TensorDataset(
+        torch.from_numpy(x_test).float(),
+        torch.from_numpy(y_test).long()
+    )
+    test_loader = DataLoader(test_split, 
+                              batch_size=batch_size, 
+                              shuffle=False, 
+                              num_workers=0)
 
     ### Set the GPU device(s)
     device = get_device()
-    
     
     ### Set up the loss
     if use_uncertainty:
@@ -329,122 +343,137 @@ if __name__ == "__main__":
         else:
             logging.error("--uncertainty requires --mse, --log or --digamma.")
     else:
-        criterion = nn.CrossEntropyLoss()
+        weights = torch.from_numpy(np.array(outputvar_weights)).float().to(device)
+        weights /= weights.sum()
+        criterion = nn.CrossEntropyLoss(
+            #weight = weights,
+            label_smoothing = label_smoothing
+        ).to(device)
 
-    ### Load MLP model
-    model = load_mlp_model(len(features), middle_size, len(outputs), dropout_rate)
-    model = model.to(device)
+#     ### Load MLP model
+#     model = DNN(
+#             len(features), 
+#             len(outputs), 
+#             block_sizes = [middle_size for _ in range(num_hidden_layers)], 
+#             dr = [dropout_rate for _ in range(num_hidden_layers)], 
+#             batch_norm = batch_norm, 
+#             lng = False
+#         ).to(device)
     
-    ### Initialize an optimizer
-    optimizer = optim.Adam(model.parameters(), 
-                           lr=learning_rate, 
-                           weight_decay=L2_reg)
+#     ### Initialize an optimizer
+#     optimizer = optim.Adam(model.parameters(), 
+#                            lr=learning_rate, 
+#                            weight_decay=L2_reg)
 
-    ### Load a learning rate scheduler
-    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, 
-        patience = lr_patience, 
-        verbose = verbose,
-        min_lr = 1.0e-13
-    )
+#     ### Load a learning rate scheduler
+#     lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+#         optimizer, 
+#         patience = lr_patience, 
+#         verbose = verbose,
+#         min_lr = 1.0e-13
+#     )
     
-    ### Train the model
-    results_dict = defaultdict(list)
-    for epoch in range(epochs):
-        ### Train one epoch
-        train_results, model, optimizer = train_one_epoch(
-            epoch,
-            model,
-            train_loader,
-            num_classes,
-            criterion,
-            optimizer,
-            batch_size,
-            device=device,
-            uncertainty=use_uncertainty,
-        )
-        ### Validate one epoch
-        valid_results = validate(
-            epoch,
-            model,
-            valid_loader,
-            num_classes,
-            criterion,
-            batch_size,
-            device=device,
-            uncertainty=use_uncertainty,
-            return_preds=False
-        )
+#     ### Train the model
+#     results_dict = defaultdict(list)
+#     for epoch in range(epochs):
+#         ### Train one epoch
+#         train_results, model, optimizer = train_one_epoch(
+#             epoch,
+#             model,
+#             train_loader,
+#             num_classes,
+#             criterion,
+#             optimizer,
+#             batch_size,
+#             device=device,
+#             uncertainty=use_uncertainty,
+#         )
+#         ### Validate one epoch
+#         valid_results = validate(
+#             epoch,
+#             model,
+#             valid_loader,
+#             num_classes,
+#             criterion,
+#             batch_size,
+#             device=device,
+#             uncertainty=use_uncertainty,
+#             return_preds=False
+#         )
         
-        results_dict["train_loss"].append(np.mean(train_results["loss"]))
-        results_dict["train_acc"].append(np.mean(valid_results["acc"]))
-        results_dict["valid_loss"].append(np.mean(train_results["loss"]))
-        results_dict["valid_acc"].append(np.mean(valid_results["acc"]))
+#         results_dict["train_loss"].append(np.mean(train_results["loss"]))
+#         results_dict["train_acc"].append(np.mean(valid_results["acc"]))
+#         results_dict["valid_loss"].append(np.mean(train_results["loss"]))
+#         results_dict["valid_acc"].append(np.mean(valid_results["acc"]))
         
-        ### Save the dataframe to disk
-        df = pd.DataFrame.from_dict(results_dict).reset_index()
-        df.to_csv(f"{save_loc}/training_log.csv", index = False)
+#         ### Save the dataframe to disk
+#         df = pd.DataFrame.from_dict(results_dict).reset_index()
+#         df.to_csv(f"{save_loc}/training_log.csv", index = False)
         
-        ### Save the model only if its the best
-        if results_dict["valid_acc"][-1] == max(results_dict["valid_acc"]):
-            state_dict = {
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scaler_x': scaler_x,
-                'valid_accuracy': min(results_dict["valid_acc"])
-            }
-            torch.save(state_dict, f"{save_loc}/best.pt")
+#         ### Save the model only if its the best
+#         if results_dict["valid_acc"][-1] == max(results_dict["valid_acc"]):
+#             state_dict = {
+#                 'epoch': epoch,
+#                 'model_state_dict': model.state_dict(),
+#                 'optimizer_state_dict': optimizer.state_dict(),
+#                 'scaler_x': scaler_x,
+#                 'valid_accuracy': min(results_dict["valid_acc"])
+#             }
+#             torch.save(state_dict, f"{save_loc}/best.pt")
         
-        ### Update the scheduler
-        lr_scheduler.step(1.0 - results_dict["valid_acc"][-1])
+#         ### Update the scheduler
+#         lr_scheduler.step(1.0 - results_dict["valid_acc"][-1])
         
-        ### Early stopping
-        best_epoch = [i for i,j in enumerate(
-            results_dict["valid_acc"]) if j == max(results_dict["valid_acc"])][0]
-        offset = epoch - best_epoch
-        if offset >= stopping_patience:
-            break
+#         ### Early stopping
+#         best_epoch = [i for i,j in enumerate(
+#             results_dict["valid_acc"]) if j == max(results_dict["valid_acc"])][0]
+#         offset = epoch - best_epoch
+#         if offset >= stopping_patience:
+#             break
             
             
     ### Evaluate with the best model
-    model = load_mlp_model(len(features), middle_size, len(outputs), dropout_rate).to(device)
+    model = DNN(
+        len(features), 
+        len(outputs), 
+        block_sizes = [middle_size for _ in range(num_hidden_layers)], 
+        dr = [dropout_rate for _ in range(num_hidden_layers)], 
+        batch_norm = batch_norm, 
+        lng = False
+    ).to(device)
+    
+    model.load_weights(f"{save_loc}/best.pt")
         
     checkpoint = torch.load(
         f"{save_loc}/best.pt",
         map_location=lambda storage, loc: storage
     )
-    model.load_state_dict(checkpoint["model_state_dict"])
     epoch = checkpoint["epoch"]
-    model.eval()
     
-    ### Wrap the test split
-    test_split = TensorDataset(
-        torch.from_numpy(x_test).float(),
-        torch.from_numpy(y_test).long()
-    )
-    test_loader = DataLoader(test_split, 
-                              batch_size=batch_size, 
-                              shuffle=False, 
-                              num_workers=0)
     
-    test_results = validate(
-            epoch,
-            model,
-            test_loader,
-            num_classes,
-            criterion,
-            batch_size,
-            device=device,
-            uncertainty=use_uncertainty,
-            return_preds=True
-        )
+    dfs = [train_data, valid_data, test_data]
+    loaders = [train_loader, valid_loader, test_loader]
+    save_names = ["train", "valid", "test"]
+    for df, loader, name in zip(dfs, loaders, save_names):
     
-    ### Add the predictions to the original dataframe and save to disk
-    for idx in range(len(outputs)):
-        test_data[f"{outputs[idx]}_conf"] = test_results["pred_probs"][:, idx].cpu().numpy()
-    test_data["uncertainty"] = test_results["pred_uncertainty"][:, 0].cpu().numpy()
-    test_data["pred_labels"] = test_results["pred_labels"][:, 0].cpu().numpy()
-    test_data["true_labels"] = test_results["true_labels"][:, 0].cpu().numpy()
-    test_data["pred_conf"] = np.max(test_results["pred_probs"].cpu().numpy(), 1)
-    test_data.to_parquet(f"{save_loc}/test_data.parquet")
+        results = validate(
+                epoch,
+                model,
+                loader,
+                num_classes,
+                criterion,
+                batch_size,
+                device=device,
+                uncertainty=use_uncertainty,
+                return_preds=True
+            )
+
+        ### Add the predictions to the original dataframe and save to disk
+        for idx in range(len(outputs)):
+            df[f"{outputs[idx]}_conf"] = results["pred_probs"][:, idx].cpu().numpy()
+        if use_uncertainty:
+            df["uncertainty"] = results["pred_uncertainty"][:, 0].cpu().numpy()
+        df["pred_labels"] = results["pred_labels"][:, 0].cpu().numpy()
+        df["true_labels"] = results["true_labels"][:, 0].cpu().numpy()
+        df["pred_conf"] = np.max(results["pred_probs"].cpu().numpy(), 1)
+        df.to_parquet(f"{save_loc}/{name}.parquet")

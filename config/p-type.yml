@@ -1,3 +1,33 @@
+seed: 1000
+verbose: True
+save_loc: "/glade/work/schreck/repos/evidential/evidential/results/ptype-mlp"
+
+trainer:
+    n_splits: 1
+    train_size1: 0.9
+    train_size2: 0.885
+    num_hidden_layers: 6
+    hidden_sizes: 534
+    dropout_rate: 0.051358709553723805
+    batch_size: 34582
+    batch_norm: True
+    learning_rate: 0.0010003391112873381
+    l2_reg: 0.005
+    metrics: 'acc'
+    run_eagerly: True
+    shuffle: True
+    epochs: 1000
+    lr_patience: 3
+    stopping_patience: 10
+    label_smoothing: 0.01397984371358285
+    loss: "digamma" # ce, digamma, log, mse
+    outputvar_weights: [1.1366, 1.2087, 310.0756, 39.4010]
+
+outputvars: ['ra_percent', 'sn_percent', 'pl_percent', 'fzra_percent']
+asos_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/ASOS_mixture/'
+mping_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/mPING_mixture/'
+data_path: '/glade/work/jwillson/mping_data.parquet'
+
 tempvars: [ 'TEMP_C_0_m',
  'TEMP_C_10000_m',
  'TEMP_C_1000_m',
@@ -269,45 +299,3 @@ vgrdvars: [ 'VGRD_m/s_0_m',
  'VGRD_m/s_9250_m',
  'VGRD_m/s_9500_m',
  'VGRD_m/s_9750_m']
-
-outputvars: ['ra_percent', 'sn_percent', 'pl_percent', 'fzra_percent']
-
-asos_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/ASOS_mixture/'
-
-mping_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/mPING_mixture/'
-
-data_path: '/glade/work/jwillson/mping_data.parquet'
-
-callbacks: 
-      ModelCheckpoint:
-          monitor: "val_loss"
-          filepath: "/glade/work/jwillson/model.h5"
-          save_best_only: True
-          save_weights_only: True
-      EarlyStopping:
-          monitor: "val_loss"
-          patience: 4
-      ReduceLROnPlateau:
-          monitor: "val_loss"
-          factor: 0.2
-          patience: 2
-          min_lr: 0.0000001
-          mode: "auto"
-      CSVLogger:
-          filename: "/glade/work/jwillson/mlp_training_log.txt"
-          separator: " "
-          append: True
-          
-trainer:
-    n_splits: 1
-    train_size1: 0.9
-    train_size2: 0.885
-    num_hidden_layers: 1
-    hidden_sizes: [100]
-    dropout_rate: 0.25
-    batch_size: 4096
-    learning_rate: 0.001
-    metrics: 'acc'
-    run_eagerly: True
-    shuffle: True
-    epochs: 1000
