@@ -1,6 +1,6 @@
 seed: 1000
 verbose: True
-save_loc: "/glade/work/schreck/repos/evidential/evidential/results/ptype-mlp"
+save_loc: "/glade/work/schreck/repos/evidential/evidential/results/hour_before"
 
 trainer:
     n_splits: 1
@@ -22,11 +22,14 @@ trainer:
     label_smoothing: 0.01397984371358285
     loss: "digamma" # ce, digamma, log, mse
     outputvar_weights: [1.1366, 1.2087, 310.0756, 39.4010]
+    policy: "uncertainty"
+    num_iterations: 10
 
 outputvars: ['ra_percent', 'sn_percent', 'pl_percent', 'fzra_percent']
 asos_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/ASOS_mixture/'
 mping_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/mPING_mixture/'
-data_path: '/glade/work/jwillson/mping_data.parquet'
+data_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/mPING_interpolated/'
+#data_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/mPING_hourafter_interpolated/'
 
 tempvars: [ 'TEMP_C_0_m',
  'TEMP_C_10000_m',
