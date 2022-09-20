@@ -82,7 +82,6 @@ def edl_loss(func, y, alpha, epoch_num, num_classes, annealing_step, device=None
     y = y.to(device)
     alpha = alpha.to(device)
     S = torch.sum(alpha, dim=1, keepdim=True)
-
     A = torch.sum(y * (func(S) - func(alpha)), dim=1, keepdim=True)
 
     annealing_coef = torch.min(
@@ -126,6 +125,7 @@ def edl_digamma_loss(
         device = get_device()
     evidence = relu_evidence(output)
     alpha = evidence + 1
+    
     loss = torch.mean(
         edl_loss(
             torch.digamma, target, alpha, epoch_num, num_classes, annealing_step, device

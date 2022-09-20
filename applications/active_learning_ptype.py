@@ -22,6 +22,7 @@ from evml.reliability import reliability_diagram, reliability_diagrams, compute_
 from evml.class_losses import *
 from evml.model import seed_everything, DNN
 
+from evml.training import train_one_epoch, validate
 #from torchmetrics import Accuracy
 
 import random, os, numpy as np, sys, shutil, glob
@@ -48,7 +49,7 @@ def compute_metrics(results_dict, labels, outputs, preds):
     try:
         results_dict["auc"].append(roc_auc_score(labels.cpu(), 
                                                  outputs.detach().cpu(), 
-                                                 multi_class='ovr', 
+                                                 multi_class='ovo', 
                                                  average = "macro"))
     except:
         pass
@@ -220,6 +221,7 @@ def validate(
                 prob = F.softmax(outputs, dim=1)
                 
                 if return_preds:
+					### Add MC-dropout for "pred_uncertainty"
                     results_dict["pred_labels"].append(preds.unsqueeze(-1))
                     results_dict["true_labels"].append(labels.unsqueeze(-1))
                     results_dict["pred_probs"].append(prob)
@@ -253,6 +255,7 @@ def one_hot_embedding(labels, num_classes=10):
     # Convert to One Hot Encoding
     y = torch.eye(num_classes)
     return y[labels]
+
 
 def train(conf, data, train_metric = "valid_ave_f1", direction = "max"):
     features = conf['tempvars'] + conf['tempdewvars'] + conf['ugrdvars'] + conf['vgrdvars']
@@ -358,7 +361,7 @@ def train(conf, data, train_metric = "valid_ave_f1", direction = "max"):
         weights /= weights.sum()
         criterion = nn.CrossEntropyLoss(
             weight = weights,
-            label_smoothing = label_smoothing
+            #label_smoothing = label_smoothing
         ).to(device)
 
     ### Load MLP model
@@ -385,6 +388,7 @@ def train(conf, data, train_metric = "valid_ave_f1", direction = "max"):
     )
     
     ### Train the model
+    best_model = False
     results_dict = defaultdict(list)
     for epoch in range(epochs):
         ### Train one epoch
@@ -424,7 +428,7 @@ def train(conf, data, train_metric = "valid_ave_f1", direction = "max"):
         #df.to_csv(f"{save_loc}/training_log.csv", index = False)
         
         ### Find the best value so far
-        train_metric = "valid_ave_f1"
+        train_metric = "valid_auc"
         if direction == "max":
             best_value = max(results_dict[train_metric])
             annealing_value = 1 - best_value
@@ -441,7 +445,9 @@ def train(conf, data, train_metric = "valid_ave_f1", direction = "max"):
                 'scaler_x': scaler_x,
                 train_metric: best_value
             }
-            torch.save(state_dict, f"{save_loc}/best.pt")
+            #torch.save(state_dict, f"{save_loc}/best.pt")
+            best_model = model
+            best_epoch = epoch
         
         ### Update the scheduler
         lr_scheduler.step(annealing_value)
@@ -454,27 +460,27 @@ def train(conf, data, train_metric = "valid_ave_f1", direction = "max"):
             break
             
     ### Evaluate with the best model
-    model = DNN(
-        len(features), 
-        len(outputs), 
-        block_sizes = [middle_size for _ in range(num_hidden_layers)], 
-        dr = [dropout_rate for _ in range(num_hidden_layers)], 
-        batch_norm = batch_norm, 
-        lng = False
-    ).to(device)
-    
-    model.load_weights(f"{save_loc}/best.pt")
+    #model = DNN(
+    #    len(features), 
+    #    len(outputs), 
+    #    block_sizes = [middle_size for _ in range(num_hidden_layers)], 
+    #    dr = [dropout_rate for _ in range(num_hidden_layers)], 
+    #    batch_norm = batch_norm, 
+    #    lng = False
+    #).to(device)
+	#model.load_weights(f"{save_loc}/best.pt")
         
-    checkpoint = torch.load(
-        f"{save_loc}/best.pt",
-        map_location=lambda storage, loc: storage
-    )
-    epoch = checkpoint["epoch"]
+    #checkpoint = torch.load(
+    #    f"{save_loc}/best.pt",
+    #    map_location=lambda storage, loc: storage
+    #)
+	
+    #epoch = checkpoint["epoch"]
     
     ### Predict on the splits
     train_results = validate(
-            epoch,
-            model,
+            best_epoch,
+            best_model,
             train_loader,
             num_classes,
             criterion,
@@ -486,8 +492,8 @@ def train(conf, data, train_metric = "valid_ave_f1", direction = "max"):
         )
     
     valid_results = validate(
-            epoch,
-            model,
+            best_epoch,
+            best_model,
             valid_loader,
             num_classes,
             criterion,
@@ -499,8 +505,8 @@ def train(conf, data, train_metric = "valid_ave_f1", direction = "max"):
         )
     
     test_results = validate(
-            epoch,
-            model,
+            best_epoch,
+            best_model,
             test_loader,
             num_classes,
             criterion,
@@ -522,8 +528,8 @@ def train(conf, data, train_metric = "valid_ave_f1", direction = "max"):
     
     ### Predict on the leftover data
     leftover_results = validate(
-            epoch,
-            model,
+            best_epoch,
+            best_model,
             left_loader,
             num_classes,
             criterion,
@@ -551,6 +557,10 @@ if __name__ == "__main__":
     with open(config) as cf:
         conf = yaml.load(cf, Loader=yaml.FullLoader)
         
+    start_at_split = 0
+    if len(sys.argv) == 3:
+        start_at_split = int(sys.argv[2])
+        
     save_loc = conf["save_loc"]
     seed = conf["seed"]
     os.makedirs(save_loc, exist_ok = True)
@@ -561,8 +571,8 @@ if __name__ == "__main__":
         with open(os.path.join(save_loc, "model.yml"), "w") as fid:
             yaml.dump(conf, fid)
             
-    seed_everything(seed)
-    num_iterations = conf["trainer"]["num_iterations"] + 1
+    #seed_everything(seed)
+    num_iterations = conf["trainer"]["num_iterations"]
     policy = conf["trainer"]["policy"]
 
     ### Load the data
@@ -585,67 +595,80 @@ if __name__ == "__main__":
     train_data, test_data = df.iloc[train_idx], df.iloc[test_idx]
     num_selected = int((1. / num_iterations) * train_data.shape[0])
     
-    my_iter = tqdm.tqdm(
-        range(num_iterations), 
-        total = num_iterations, 
-        leave = True
-    )
-    active_results = defaultdict(list)
-    for iteration in my_iter:
+    for sidx in range(conf['trainer']['n_splits']):
         
-        if iteration == 0:
-            ### Select random fraction on first pass
-            train_data_ = train_data.sample(n = num_selected, random_state = seed)
-            left_overs = np.array(list(set(train_data["id"]) - set(train_data_["id"])))
-            left_overs = train_data[train_data["id"].isin(left_overs)].copy()
-        else:
-            ### Select with a policy
-            if policy == "random":
-                selection = left_overs.sample(n = num_selected, random_state = seed)
-            elif policy == "uncertainty":
-                left_overs = left_overs.sort_values("uncertainty", ascending = False)
-                if num_selected > left_overs.shape[0]:
-                    selection = left_overs.copy()
-                else:
-                    selection = left_overs.iloc[:num_selected].copy()
-            train_data_ = pd.concat([train_data_, selection])
-            left_overs = np.array(list(set(train_data["id"]) - set(train_data_["id"])))
-            left_overs = train_data[train_data["id"].isin(left_overs)].copy()
-            if left_overs.shape[0] == 0:
-                break
-        
-        splitter = GroupShuffleSplit(n_splits=conf["trainer"]["n_splits"], train_size=conf['trainer']['train_size2'])
-        this_train_idx, this_valid_idx = list(splitter.split(train_data_, groups=train_data_['day']))[0]
-        this_train_data, this_valid_data = train_data_.iloc[this_train_idx], train_data_.iloc[this_valid_idx]
-
-        data_dict = {
-            "train_data": this_train_data,
-            "valid_data": this_valid_data,
-            "test_data": test_data,
-            "left_overs": left_overs
-        }
-
-        train_df, train_results, valid_results, test_results, left_overs = train(conf, data_dict)
-        
-        train_df.to_csv(
-            os.path.join(save_loc, f"training_log_{iteration}.csv"),
-            index = False
+        if sidx < start_at_split:
+            continue
+    
+        my_iter = tqdm.tqdm(
+            range(num_iterations), 
+            total = num_iterations, 
+            leave = True
         )
         
-        metrics = ["loss", "acc", "ave_acc", "ave_f1", "auc"]
-        splits = ["train", "valid", "test"]
-        result_dfs = [train_results, valid_results, test_results]
-        
-        print_str = f"Iteration {iteration}"
-        active_results["Iteration"].append(iteration)
-        for metric in metrics:
-            for split, rdf in zip(splits, result_dfs):
-                value = np.mean(rdf[metric])
-                active_results[f"{split}_{metric}"].append(value)
-                print_str += f" {split}_{metric} {value:.4f}"
-        
-        active_df = pd.DataFrame.from_dict(active_results)
-        active_df.to_csv(os.path.join(save_loc, "active_training_log.csv"))
-        print(print_str)
-        my_iter.set_description(print_str)
-        my_iter.refresh()
+        active_results = defaultdict(list)
+        for iteration in my_iter:
+
+            if iteration == 0:
+                ### Select random fraction on first pass
+                train_data_ = train_data.sample(n = num_selected, random_state = seed)
+                left_overs = np.array(list(set(train_data["id"]) - set(train_data_["id"])))
+                left_overs = train_data[train_data["id"].isin(left_overs)].copy()
+            else:
+                ### Select with a policy
+                if policy == "random":
+                    selection = left_overs.sample(n = num_selected, random_state = seed)
+                elif policy == "uncertainty":
+                    left_overs = left_overs.sort_values("uncertainty", ascending = False)
+                    if num_selected > left_overs.shape[0]:
+                        selection = left_overs.copy()
+                    else:
+                        selection = left_overs.iloc[:num_selected].copy()
+                train_data_ = pd.concat([train_data_, selection])
+                left_overs = np.array(list(set(train_data["id"]) - set(train_data_["id"])))
+                left_overs = train_data[train_data["id"].isin(left_overs)].copy()
+                if left_overs.shape[0] == 0:
+                    break
+
+            splitter = GroupShuffleSplit(n_splits=conf["trainer"]["n_splits"], 
+                                         train_size=conf['trainer']['train_size2'], 
+                                         random_state = seed)
+            this_train_idx, this_valid_idx = list(splitter.split(train_data_, groups=train_data_['day']))[sidx]
+            this_train_data, this_valid_data = train_data_.iloc[this_train_idx], train_data_.iloc[this_valid_idx]
+
+            data_dict = {
+                "train_data": this_train_data,
+                "valid_data": this_valid_data,
+                "test_data": test_data,
+                "left_overs": left_overs
+            }
+
+            train_df, train_results, valid_results, test_results, left_overs = train(conf, data_dict)
+
+            train_df.to_csv(
+                os.path.join(save_loc, 
+                             f"train_log_{iteration}_{sidx}.csv"),
+                index = False
+            )
+
+            metrics = ["loss", "acc", "ave_acc", "ave_f1", "auc"]
+            splits = ["train", "valid", "test"]
+            result_dfs = [train_results, valid_results, test_results]
+
+            print_str = f"Iteration {iteration}"
+            active_results["iteration"].append(iteration)
+            active_results["ensemble"].append(sidx)
+            for metric in metrics:
+                for _split, rdf in zip(splits, result_dfs):
+                    value = np.mean(rdf[metric])
+                    active_results[f"{_split}_{metric}"].append(value)
+                    print_str += f" {_split}_{metric} {value:.4f}"
+
+            active_df = pd.DataFrame.from_dict(active_results)
+            active_df.to_csv(os.path.join(save_loc, f"active_train_log_{sidx}.csv"))
+            print(print_str)
+            #my_iter.set_description(print_str)
+            #my_iter.refresh()
+            
+        if start_at_split > 0:
+            break

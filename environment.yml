@@ -25,4 +25,6 @@ dependencies:
   - cython
   - pip:
     - torch
+    - pyarrow
+    - fastparquet
     - .

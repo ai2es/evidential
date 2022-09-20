@@ -1,34 +1,34 @@
 seed: 1000
 verbose: True
-save_loc: "/glade/work/schreck/repos/evidential/evidential/results/hour_before"
+save_loc: "/glade/work/schreck/repos/evidential/evidential/results/test"
 
 trainer:
-    n_splits: 1
+    n_splits: 10
     train_size1: 0.9
     train_size2: 0.885
-    num_hidden_layers: 6
-    hidden_sizes: 534
-    dropout_rate: 0.051358709553723805
-    batch_size: 34582
+    num_hidden_layers: 2
+    hidden_sizes: 128
+    dropout_rate: 0.0
+    batch_size: 2048
     batch_norm: True
-    learning_rate: 0.0010003391112873381
-    l2_reg: 0.005
-    metrics: 'acc'
+    learning_rate: 0.001
+    l2_reg: 1.0e-06
+    metrics: 'auc'
     run_eagerly: True
     shuffle: True
     epochs: 1000
     lr_patience: 3
     stopping_patience: 10
-    label_smoothing: 0.01397984371358285
-    loss: "digamma" # ce, digamma, log, mse
-    outputvar_weights: [1.1366, 1.2087, 310.0756, 39.4010]
-    policy: "uncertainty"
+    label_smoothing: 0.0
+    loss: "ce" # ce, digamma, log, mse
+    outputvar_weights: [0.05, 0.15, 0.3, 0.8]
+    policy: "random"
     num_iterations: 10
 
 outputvars: ['ra_percent', 'sn_percent', 'pl_percent', 'fzra_percent']
 asos_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/ASOS_mixture/'
 mping_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/mPING_mixture/'
-data_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/mPING_interpolated/'
+data_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/mPING_hourafter_interpolated/'
 #data_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/mPING_hourafter_interpolated/'
 
 tempvars: [ 'TEMP_C_0_m',
