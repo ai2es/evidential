@@ -3,7 +3,7 @@ import tqdm
 from collections import defaultdict
 import torch
 import torch.nn.functional as F
-from evml.class_losses import get_device
+from evml.class_losses import *
 from evml.metrics import compute_metrics
 
 
@@ -21,6 +21,7 @@ def train_one_epoch(
     criterion,
     optimizer,
     batch_size,
+    weights=None,
     device=None,
     uncertainty=False,
     metric="accuracy",
@@ -53,7 +54,7 @@ def train_one_epoch(
             y = y.to(device)
             outputs = model(inputs)
             _, preds = torch.max(outputs, 1)
-            loss = criterion(outputs, y.float(), epoch, num_classes, 10, device)
+            loss = criterion(outputs, y.float(), epoch, num_classes, 10, weights, device)
 
             match = torch.reshape(torch.eq(preds, labels).float(), (-1, 1))
             acc = torch.mean(match)
@@ -107,6 +108,7 @@ def validate(
     num_classes,
     criterion,
     batch_size,
+    weights=None,
     device=None,
     uncertainty=False,
     metric="accuracy",
@@ -138,7 +140,7 @@ def validate(
                 y = y.to(device)
                 outputs = model(inputs)
                 _, preds = torch.max(outputs, 1)
-                loss = criterion(outputs, y.float(), epoch, num_classes, 10, device)
+                loss = criterion(outputs, y.float(), epoch, num_classes, 10, weights, device)
 
                 match = torch.reshape(torch.eq(preds, labels).float(), (-1, 1))
                 acc = torch.mean(match)

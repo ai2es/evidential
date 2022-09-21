@@ -78,11 +78,15 @@ def mse_loss(y, alpha, epoch_num, num_classes, annealing_step, device=None):
     return loglikelihood + kl_div
 
 
-def edl_loss(func, y, alpha, epoch_num, num_classes, annealing_step, device=None):
+def edl_loss(func, y, alpha, epoch_num, num_classes, annealing_step, weights=None, device=None):
     y = y.to(device)
     alpha = alpha.to(device)
     S = torch.sum(alpha, dim=1, keepdim=True)
-    A = torch.sum(y * (func(S) - func(alpha)), dim=1, keepdim=True)
+    if weights is None or not weights:
+        A = torch.sum(y * (func(S) - func(alpha)), dim=1, keepdim=True)
+    else:
+        weights = weights.to(device)
+        A = torch.sum(weights * y * (func(S) - func(alpha)), dim=1, keepdim=True)
 
     annealing_coef = torch.min(
         torch.tensor(1.0, dtype=torch.float32),
@@ -94,32 +98,32 @@ def edl_loss(func, y, alpha, epoch_num, num_classes, annealing_step, device=None
     return A + kl_div
 
 
-def edl_mse_loss(output, target, epoch_num, num_classes, annealing_step, device=None):
+def edl_mse_loss(output, target, epoch_num, num_classes, annealing_step, weights=None, device=None):
     if not device:
         device = get_device()
     evidence = relu_evidence(output)
     alpha = evidence + 1
     loss = torch.mean(
-        mse_loss(target, alpha, epoch_num, num_classes, annealing_step, device=device)
+        mse_loss(target, alpha, epoch_num, num_classes, annealing_step, weights, device)
     )
     return loss
 
 
-def edl_log_loss(output, target, epoch_num, num_classes, annealing_step, device=None):
+def edl_log_loss(output, target, epoch_num, num_classes, annealing_step, weights=None, device=None):
     if not device:
         device = get_device()
     evidence = relu_evidence(output)
     alpha = evidence + 1
     loss = torch.mean(
         edl_loss(
-            torch.log, target, alpha, epoch_num, num_classes, annealing_step, device
+            torch.log, target, alpha, epoch_num, num_classes, annealing_step, weights, device
         )
     )
     return loss
 
 
 def edl_digamma_loss(
-    output, target, epoch_num, num_classes, annealing_step, device=None
+    output, target, epoch_num, num_classes, annealing_step, weights=None, device=None
 ):
     if not device:
         device = get_device()
@@ -128,7 +132,7 @@ def edl_digamma_loss(
     
     loss = torch.mean(
         edl_loss(
-            torch.digamma, target, alpha, epoch_num, num_classes, annealing_step, device
+            torch.digamma, target, alpha, epoch_num, num_classes, annealing_step, weights, device
         )
     )
     return loss

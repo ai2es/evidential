@@ -24,9 +24,10 @@ from evml.model import seed_everything, DNN
 
 from evml.training import train_one_epoch, validate
 import random, os, numpy as np, sys, shutil, glob
+from functools import partial
 
 
-def train(conf, data, train_metric = "valid_ave_f1", direction = "max"):
+def train(conf, data, train_metric = "valid_auc", direction = "max"):
     features = conf['tempvars'] + conf['tempdewvars'] + conf['ugrdvars'] + conf['vgrdvars']
     outputs = conf['outputvars']
     num_classes = len(outputs)
@@ -116,6 +117,8 @@ def train(conf, data, train_metric = "valid_ave_f1", direction = "max"):
     device = get_device()
     
     ### Set up the loss
+    weights = torch.from_numpy(np.array(outputvar_weights)).float().to(device)
+    weights /= weights.sum()
     if use_uncertainty:
         if loss == "digamma":
             criterion = edl_digamma_loss
@@ -126,11 +129,9 @@ def train(conf, data, train_metric = "valid_ave_f1", direction = "max"):
         else:
             logging.error("--uncertainty requires --mse, --log or --digamma.")
     else:
-        weights = torch.from_numpy(np.array(outputvar_weights)).float().to(device)
-        weights /= weights.sum()
         criterion = nn.CrossEntropyLoss(
             weight = weights,
-            #label_smoothing = label_smoothing
+            label_smoothing = label_smoothing
         ).to(device)
 
     ### Load MLP model
@@ -169,6 +170,7 @@ def train(conf, data, train_metric = "valid_ave_f1", direction = "max"):
             criterion,
             optimizer,
             batch_size,
+            weights=weights,
             device=device,
             uncertainty=use_uncertainty,
             verbose=False
@@ -181,6 +183,7 @@ def train(conf, data, train_metric = "valid_ave_f1", direction = "max"):
             num_classes,
             criterion,
             batch_size,
+            weights=weights,
             device=device,
             uncertainty=use_uncertainty,
             return_preds=False,
@@ -197,7 +200,6 @@ def train(conf, data, train_metric = "valid_ave_f1", direction = "max"):
         #df.to_csv(f"{save_loc}/training_log.csv", index = False)
         
         ### Find the best value so far
-        train_metric = "valid_auc"
         if direction == "max":
             best_value = max(results_dict[train_metric])
             annealing_value = 1 - best_value
@@ -339,6 +341,8 @@ if __name__ == "__main__":
     ### Split and preprocess the data
     df['day'] = df['datetime'].apply(lambda x: str(x).split(' ')[0])
     df["id"] = range(df.shape[0])
+    train_metric = "valid_auc"
+    direction = "max"
     
     splitter = GroupShuffleSplit(n_splits=conf['trainer']['n_splits'], 
                                  train_size=conf['trainer']['train_size1'], 
@@ -395,7 +399,9 @@ if __name__ == "__main__":
                 "left_overs": left_overs
             }
 
-            train_df, train_results, valid_results, test_results, left_overs = train(conf, data_dict)
+            train_df, train_results, valid_results, test_results, left_overs = train(
+                conf, data_dict, train_metric, direction
+            )
 
             train_df.to_csv(
                 os.path.join(save_loc, 
