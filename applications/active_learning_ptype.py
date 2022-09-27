@@ -21,13 +21,15 @@ import matplotlib.pyplot as plt
 from evml.reliability import reliability_diagram, reliability_diagrams, compute_calibration
 from evml.class_losses import *
 from evml.model import seed_everything, DNN
+from evml.mc_dropout import monte_carlo_dropout
 
 from evml.training import train_one_epoch, validate
 import random, os, numpy as np, sys, shutil, glob
 from functools import partial
 
 
-def train(conf, data, train_metric = "valid_auc", direction = "max"):
+def train(conf, data, train_metric = "valid_auc", direction = "max", mc_forward_passes = 50):
+    
     features = conf['tempvars'] + conf['tempdewvars'] + conf['ugrdvars'] + conf['vgrdvars']
     outputs = conf['outputvars']
     num_classes = len(outputs)
@@ -49,6 +51,7 @@ def train(conf, data, train_metric = "valid_auc", direction = "max"):
     epochs = conf['trainer']['epochs']
     seed = conf["seed"]
     verbose = conf["verbose"]
+    policy = conf["trainer"]["policy"]
 
     lr_patience = conf["trainer"]["lr_patience"]
     stopping_patience = conf["trainer"]["stopping_patience"]
@@ -281,23 +284,39 @@ def train(conf, data, train_metric = "valid_auc", direction = "max"):
     #test_data["pred_conf"] = np.max(results["pred_probs"].cpu().numpy(), 1)
     
     ### Predict on the leftover data
-    leftover_results = validate(
-            best_epoch,
-            best_model,
+    if policy == "mc_dropout":
+        n_samples = x_left.shape[0]
+        mc_results = monte_carlo_dropout(
             left_loader,
+            mc_forward_passes,
+            best_model,
             num_classes,
-            criterion,
-            batch_size,
-            device=device,
-            uncertainty=use_uncertainty,
-            return_preds=True,
-            verbose=False
+            n_samples, 
+            batch_size=batch_size, 
+            uncertainty=use_uncertainty
         )
-
-    ### Add the predictions to the original dataframe and save to disk
-    if use_uncertainty:
+        # take the top prediction and computed variance
+        left_overs["uncertainty"] = np.take_along_axis(
+            mc_results["variance"],
+            np.argmax(mc_results["mean"], axis = 1)[:, None], 
+            axis=1
+        )
+    elif policy == "evidential":
+        leftover_results = validate(
+                best_epoch,
+                best_model,
+                left_loader,
+                num_classes,
+                criterion,
+                batch_size,
+                device=device,
+                uncertainty=use_uncertainty,
+                return_preds=True,
+                verbose=False
+            )
+        ### Add the predictions to the original dataframe and save to disk
         left_overs["uncertainty"] = leftover_results["pred_uncertainty"][:, 0].cpu().numpy()
-
+        
     return df, train_results, valid_results, test_results, left_overs
 
 
@@ -374,7 +393,7 @@ if __name__ == "__main__":
                 ### Select with a policy
                 if policy == "random":
                     selection = left_overs.sample(n = num_selected, random_state = seed)
-                elif policy == "uncertainty":
+                else:
                     left_overs = left_overs.sort_values("uncertainty", ascending = False)
                     if num_selected > left_overs.shape[0]:
                         selection = left_overs.copy()

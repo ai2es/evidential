@@ -82,7 +82,7 @@ def edl_loss(func, y, alpha, epoch_num, num_classes, annealing_step, weights=Non
     y = y.to(device)
     alpha = alpha.to(device)
     S = torch.sum(alpha, dim=1, keepdim=True)
-    if weights is None or not weights:
+    if not isinstance(weights, torch.Tensor):
         A = torch.sum(y * (func(S) - func(alpha)), dim=1, keepdim=True)
     else:
         weights = weights.to(device)

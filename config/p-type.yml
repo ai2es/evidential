@@ -1,6 +1,6 @@
 seed: 1000
 verbose: True
-save_loc: "/glade/work/schreck/repos/evidential/evidential/results/test"
+save_loc: "/glade/work/schreck/repos/evidential/evidential/results/mc_test"
 
 trainer:
     n_splits: 10
@@ -8,7 +8,7 @@ trainer:
     train_size2: 0.885
     num_hidden_layers: 2
     hidden_sizes: 128
-    dropout_rate: 0.0
+    dropout_rate: 0.2
     batch_size: 2048
     batch_norm: True
     learning_rate: 0.001
@@ -20,9 +20,9 @@ trainer:
     lr_patience: 3
     stopping_patience: 10
     label_smoothing: 0.0
-    loss: "digamma" # ce, digamma, log, mse
+    loss: "ce" # ce, digamma, log, mse
     outputvar_weights: [0.05, 0.15, 0.3, 0.8]
-    policy: "random"
+    policy: "mc_dropout" # mc_dropout, evidential, random
     num_iterations: 10
 
 outputvars: ['ra_percent', 'sn_percent', 'pl_percent', 'fzra_percent']

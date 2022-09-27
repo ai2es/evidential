@@ -147,7 +147,7 @@ class DNN(torch.nn.Module):
     
     
     
-    def predict(self, x, batch_size = 32):
+    def predict(self, x, batch_size = 32, return_numpy = True):
         
         if len(x.shape) != 2:
             logger.warning(
@@ -160,9 +160,12 @@ class DNN(torch.nn.Module):
         self.to(device) 
         self.eval()
         
+        if type(x) == torch.Tensor: #
+            x = x.numpy()
+        
         if self.lng:
             with torch.no_grad():
-                if batch_size > x.shape[0]:
+                if batch_size < x.shape[0]:
                     X = np.array_split(x, x.shape[0] / batch_size)
                     pred = torch.cat([
                         torch.hstack(
@@ -175,7 +178,7 @@ class DNN(torch.nn.Module):
                     ).cpu()
         else:
             with torch.no_grad():
-                if batch_size > x.shape[0]:
+                if batch_size < x.shape[0]:
                     X = np.array_split(x, x.shape[0] / batch_size)
                     pred = torch.cat([
                         self.forward(torch.from_numpy(_x).float().to(device))
@@ -185,4 +188,4 @@ class DNN(torch.nn.Module):
                     pred = self.forward(
                         torch.from_numpy(x).float().to(device)
                     ).cpu()
-        return pred.numpy()
+        return pred.numpy() if return_numpy else pred
