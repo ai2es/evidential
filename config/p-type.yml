@@ -12,6 +12,7 @@ trainer:
     batch_size: 2048
     batch_norm: True
     learning_rate: 0.001
+    activation: "leaky"
     l2_reg: 1.0e-06
     metrics: 'auc'
     run_eagerly: True
@@ -21,7 +22,7 @@ trainer:
     stopping_patience: 10
     label_smoothing: 0.0
     loss: "ce" # ce, digamma, log, mse
-    outputvar_weights: [0.05, 0.15, 0.3, 0.8]
+    outputvar_weights: [0.1, 0.2, 0.3, 0.6] #[0.05, 0.15, 0.3, 0.8]
     policy: "mc_dropout" # mc_dropout, evidential, random
     num_iterations: 10
 
