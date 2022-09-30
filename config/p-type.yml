@@ -4,7 +4,7 @@ save_loc: "/glade/work/schreck/repos/evidential/evidential/results/mc_test"
 
 trainer:
     n_splits: 10
-    train_size1: 0.9
+    train_size1: 0.938
     train_size2: 0.885
     num_hidden_layers: 2
     hidden_sizes: 128
