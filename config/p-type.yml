@@ -1,6 +1,6 @@
 seed: 1000
 verbose: True
-save_loc: "/glade/work/schreck/repos/evidential/evidential/results/mc_test"
+save_loc: "/glade/work/schreck/repos/evidential/evidential/results/mlp_weights"
 
 trainer:
     n_splits: 10
@@ -10,19 +10,22 @@ trainer:
     hidden_sizes: 128
     dropout_rate: 0.2
     batch_size: 2048
+    balance_batches: 0
     batch_norm: True
     learning_rate: 0.001
     activation: "leaky"
+    out_activation: "linear"
     l2_reg: 1.0e-06
-    metrics: 'auc'
-    run_eagerly: True
+    metrics: 'val_csi'
+    run_eagerly: False
     shuffle: True
     epochs: 1000
     lr_patience: 3
     stopping_patience: 10
     label_smoothing: 0.0
-    loss: "ce" # ce, digamma, log, mse
-    outputvar_weights: [0.1, 0.2, 0.3, 0.6] #[0.05, 0.15, 0.3, 0.8]
+    loss: "digamma" # ce, digamma, log, mse
+    outputvar_weights: [ 0.37939381,  0.96543804,  35.0, 15.0]
+    use_weights: 1
     policy: "mc_dropout" # mc_dropout, evidential, random
     num_iterations: 10
 
@@ -303,3 +306,29 @@ vgrdvars: [ 'VGRD_m/s_0_m',
  'VGRD_m/s_9250_m',
  'VGRD_m/s_9500_m',
  'VGRD_m/s_9750_m']
+ 
+ 
+#  callbacks:
+#   EarlyStopping:
+#     monitor: "val_mae"
+#     patience: 4
+#     mode: "min"
+#     verbose: 1
+#   ReduceLROnPlateau: 
+#     monitor: "val_mae"
+#     factor: 0.1
+#     patience: 1
+#     min_lr: 0.000000000000001
+#     mode: "min"
+#     verbose: 1
+#   CSVLogger:
+#     filename: "/glade/work/schreck/repos/crisis/conv_risk_intel/results/regression/training_log.txt"
+#     separator: " "
+#     append: 0
+#   ModelCheckpoint:
+#     filepath: "/glade/work/schreck/repos/crisis/conv_risk_intel/results/regression/best.hdf5"
+#     monitor: "val_mae"
+#     save_weights: 1
+#     save_best_only: 1
+#     mode: "min"
+#     verbose: 1
