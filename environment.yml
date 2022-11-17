@@ -27,4 +27,6 @@ dependencies:
     - torch
     - pyarrow
     - fastparquet
+    - hagelslag
+    - imblearn
     - .
