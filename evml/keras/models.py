@@ -39,7 +39,7 @@ def build_model(input_size,
     return model
 
 
-def calc_prob_uncertinty(outputs, num_classes = 4):
+def calc_prob_uncertainty(outputs, num_classes = 4):
     evidence = K.relu(outputs)
     alpha = evidence + 1
     u = num_classes / K.sum(alpha, axis=1, keepdims=True)

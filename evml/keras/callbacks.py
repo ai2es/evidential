@@ -6,6 +6,7 @@ from typing import List, Dict
 import logging
 from functools import partial
 import math
+import tensorflow as tf
 
 
 logger = logging.getLogger(__name__)
