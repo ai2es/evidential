@@ -1,5 +1,4 @@
 import tensorflow as tf 
-from keras import backend as K
 import numpy as np
 
 def build_model(input_size, 
@@ -40,8 +39,11 @@ def build_model(input_size,
 
 
 def calc_prob_uncertainty(outputs, num_classes = 4):
-    evidence = K.relu(outputs)
+    evidence = tf.nn.relu(outputs)
     alpha = evidence + 1
-    u = num_classes / K.sum(alpha, axis=1, keepdims=True)
-    prob = alpha / K.sum(alpha, axis=1, keepdims=True)
-    return prob, u
+    S = tf.keras.backend.sum(alpha, axis=1, keepdims=True)
+    u = num_classes / S
+    prob = alpha / S
+    epistemic = prob * (1 - prob) / (S + 1)
+    aleatoric = prob - prob**2 - epistemic
+    return prob, u, aleatoric, epistemic

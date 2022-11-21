@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras import backend as K
 import numpy as np
+from tensorflow.keras.utils import get_registered_name
 
 
 class DirichletEvidentialLoss:
@@ -8,7 +9,6 @@ class DirichletEvidentialLoss:
     def __init__(self, callback=False, weights=False, name = "dirichlet"):
         
         super().__init__()
-        
         self.callback = callback
         self.weights = weights
         self.__name__ = name
@@ -70,3 +70,14 @@ class DirichletEvidentialLoss:
         C = annealing_coef * self.KL(alpha_hat)
         C = tf.reduce_mean(C, axis=1)
         return tf.reduce_mean(A + B + C)
+    
+#     def get_config(self):
+#         base_config = {}
+#         base_config['callback'] = self.callback
+#         base_config['weights'] = self.weights
+#         base_config['name'] = self.__name__
+#         return base_config
+    
+#     @classmethod
+#     def from_config(cls, config):
+#         return cls(**config)
