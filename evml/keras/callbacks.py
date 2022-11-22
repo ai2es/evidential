@@ -1,12 +1,14 @@
+import tensorflow as tf
 from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.callbacks import Callback, ModelCheckpoint, CSVLogger, EarlyStopping
 from tensorflow.python.keras.callbacks import ReduceLROnPlateau, LearningRateScheduler
 from hagelslag.evaluation.ProbabilityMetrics import DistributedROC
+import numpy as np
 from typing import List, Dict
 import logging
 from functools import partial
 import math
-
+from .models import calc_prob_uncertainty
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +74,7 @@ class ReportEpoch(tf.keras.callbacks.Callback):
 
 class CSICallback(tf.keras.callbacks.Callback):
     def __init__(self, model, x_test, y_test):
-        super(PredictCallback, self).__init__()
+        super(CSICallback, self).__init__()
         self.model = model
         self.x_test = x_test
         self.y_test = y_test
@@ -84,7 +86,7 @@ class CSICallback(tf.keras.callbacks.Callback):
     
 
     def mean_csi(self, y_true, y_pred):
-        pred_probs, u = calc_prob_uncertinty(y_pred)
+        pred_probs, u = calc_prob_uncertainty(y_pred)
         pred_probs = pred_probs.numpy()
         u = u.numpy()
         #true_labels = np.argmax(y_true, 1) 

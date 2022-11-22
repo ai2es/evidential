@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from sklearn.metrics import confusion_matrix
 import numpy as np
-
+import os
 from cartopy import crs as ccrs
 from cartopy import feature as cfeature
 
@@ -63,7 +63,7 @@ def conus_plot(df,
     cLat = (latN + latS)/2
     cLon = (lonW + lonE )/2
     colors = {0:'lime', 1:'dodgerblue', 2:'red', 3:'black'}
-
+    scale = 10
     proj = ccrs.LambertConformal(central_longitude=cLon, central_latitude=cLat)
     res = '50m'  # Coarsest and quickest to display; other options are '10m' (slowest) and '50m'.
     fig = plt.figure(figsize=(18, 12))
@@ -96,7 +96,7 @@ def conus_plot(df,
     plt.legend(colors.values(), labels=["Rain", "Snow", "Ice Pellets", "Freezing Rain"], fontsize=24, markerscale=3, loc="lower right")
     plt.title(f"{dataset} {first_day} to {last_day} {title} Labels", fontsize=30)
     if save_path is not False:
-        fn = os.path.join(save_path, f'{image_path}_{timeframe}_truelabels.png')
+        fn = os.path.join(save_path, f'{first_day}_{last_day}_truelabels.png')
         plt.savefig(fn, dpi=300, bbox_inches='tight')
     plt.tight_layout()
     plt.show()
