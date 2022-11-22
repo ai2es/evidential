@@ -46,7 +46,7 @@ def monte_carlo_dropout(data_loader,
             output = model.predict(image, batch_size=batch_size, return_numpy=False)
             if n_classes > 1:
                 if uncertainty:
-                    evidence = relu_evidence(outputs)
+                    evidence = relu_evidence(output)
                     alpha = evidence + 1
                     #u = num_classes / torch.sum(alpha, dim=1, keepdim=True)
                     output = alpha / torch.sum(alpha, dim=1, keepdim=True)

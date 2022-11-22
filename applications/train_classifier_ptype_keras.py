@@ -17,7 +17,7 @@ import pandas as pd
 import tensorflow as tf
 import tensorflow_addons as tfa
 import matplotlib.pyplot as plt
-
+import glob
 from keras import backend as K
 from collections import OrderedDict
 from sklearn.model_selection import train_test_split, GroupShuffleSplit
@@ -293,7 +293,7 @@ def trainer(conf, evaluate = True, data_seed = 0):
             class_weight = class_weight,
             epochs = conf["trainer"]["epochs"],
             batch_size = conf["trainer"]["batch_size"],
-            callbacks = [predict_callback, epoch_callback, callback1, callback2],
+            callbacks = [epoch_callback, callback1, callback2],
             verbose = 2,
             shuffle = True
         )
