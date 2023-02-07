@@ -81,3 +81,38 @@ class DirichletEvidentialLoss:
 #     @classmethod
 #     def from_config(cls, config):
 #         return cls(**config)
+
+
+class EvidentialRegressionLoss(tf.keras.losses.Loss):
+    
+    def __init__(self, coeff=1.0):
+        super(EvidentialRegressionLoss, self).__init__()
+        self.coeff = coeff
+        
+    def NIG_NLL(self, y, gamma, v, alpha, beta, reduce=True):
+        # v += 1e-12
+        twoBlambda = 2*beta*(1+v)# + 1e-12
+        nll = 0.5*tf.math.log(np.pi/v)  \
+            - alpha*tf.math.log(twoBlambda)  \
+            + (alpha+0.5) * tf.math.log(v*(y-gamma)**2 + twoBlambda)  \
+            + tf.math.lgamma(alpha)  \
+            - tf.math.lgamma(alpha+0.5)
+        return tf.reduce_mean(nll) if reduce else nll
+
+    def NIG_Reg(self, y, gamma, v, alpha, beta, reduce=True):
+        error = tf.abs(y-gamma)
+        evi = 2*v+(alpha)
+        reg = error*evi
+
+        return tf.reduce_mean(reg) if reduce else reg
+    
+    def call(self, y_true, evidential_output):
+        gamma, v, alpha, beta = tf.split(evidential_output, 4, axis=-1)
+        loss_nll = self.NIG_NLL(y_true, gamma, v, alpha, beta)
+        loss_reg = self.NIG_Reg(y_true, gamma, v, alpha, beta)
+        return loss_nll + self.coeff * loss_reg
+    
+    def get_config(self):
+        config = super(EvidentialRegressionLoss, self).get_config()
+        config.update({'coeff': self.coeff})
+        return config

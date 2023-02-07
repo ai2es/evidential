@@ -1,5 +1,5 @@
-from setuptools import setup, find_packages
 import os
+from setuptools import setup
 
 # For guidance on setuptools best practices visit
 # https://packaging.python.org/guides/distributing-packages-using-setuptools/
@@ -16,5 +16,5 @@ setup(name="evidential", # Change
       author="John Schreck",
       license="CC0 1.0",
       classifiers=classifiers,
-      packages=find_packages(include=["evml", "evml.keras"]))
+      packages=["evml", "evml.keras"])
 
