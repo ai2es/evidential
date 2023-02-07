@@ -16,5 +16,5 @@ setup(name="evidential", # Change
       author="John Schreck",
       license="CC0 1.0",
       classifiers=classifiers,
-      packages=["evml", "evml.keras"])
+      packages=["evml", "evml.keras", "evml.torch"])
 
