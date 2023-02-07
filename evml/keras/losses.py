@@ -90,7 +90,7 @@ class EvidentialRegressionLoss(tf.keras.losses.Loss):
         self.coeff = coeff
         
     def NIG_NLL(self, y, gamma, v, alpha, beta, reduce=True):
-        # v += 1e-12
+        v += 1e-12
         twoBlambda = 2*beta*(1+v)# + 1e-12
         nll = 0.5*tf.math.log(np.pi/v)  \
             - alpha*tf.math.log(twoBlambda)  \
