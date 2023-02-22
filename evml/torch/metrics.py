@@ -25,6 +25,7 @@ def compute_metrics(results_dict, labels, outputs, preds):
                 labels.cpu(), outputs.detach().cpu(), multi_class="ovo", average="macro"
             )
         )
-    except Exception as E:
+    except Exception as e:
+        print(e)
         pass
     return results_dict

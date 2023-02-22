@@ -1,5 +1,4 @@
 from torch import nn
-import torch.nn.functional as F
 from torch.nn import init
 import torch, logging
 from torch.nn.utils import spectral_norm as SpectralNorm
@@ -9,8 +8,6 @@ import numpy as np
 import os
 
 warnings.filterwarnings("ignore")
-
-
 logger = logging.getLogger(__name__)
 
 
@@ -33,9 +30,10 @@ def seed_everything(seed=1234):
 def init_weights(net, init_type='normal', init_gain=0.0, verbose=True):
     """Initialize network weights.
     Parameters:
-        net (network)   -- network to be initialized
-        init_type (str) -- the name of an initialization method: normal | xavier | kaiming | orthogonal
-        init_gain (float)    -- scaling factor for normal, xavier and orthogonal.
+        net: Network. Network to be initialized.
+        init_type: String. The name of an initialization method: normal | xavier | kaiming | orthogonal.
+        init_gain: Float. Scaling factor for normal, xavier and orthogonal.
+        verbose: Boolean. Verbosity mode.
     We use 'normal' in the original pix2pix and CycleGAN paper. But xavier and kaiming might
     work better for some applications. Feel free to try yourself.
     """
@@ -63,9 +61,9 @@ def init_weights(net, init_type='normal', init_gain=0.0, verbose=True):
     
     
 class LinearNormalGamma(nn.Module):
-    def __init__(self, in_chanels, out_channels):
+    def __init__(self, in_channels, out_channels):
         super().__init__()
-        self.linear = SpectralNorm(nn.Linear(in_chanels, out_channels*4))
+        self.linear = SpectralNorm(nn.Linear(in_channels, out_channels*4))
 
     def evidence(self, x):
         return  torch.log(torch.exp(x) + 1)
@@ -79,8 +77,8 @@ class LinearNormalGamma(nn.Module):
 class DNN(torch.nn.Module):
     
     def __init__(self, 
-                 inputSize, 
-                 outputSize, 
+                 input_size,
+                 output_size,
                  block_sizes = [1000], 
                  dr = [0.5], 
                  batch_norm = True, 
@@ -90,28 +88,28 @@ class DNN(torch.nn.Module):
         self.lng = lng
         
         if len(block_sizes) > 0:
-            blocks = self.block(inputSize, block_sizes[0], dr[0], batch_norm)
+            blocks = self.block(input_size, block_sizes[0], dr[0], batch_norm)
             if len(block_sizes) > 1:
                 for i in range(len(block_sizes)-1):
                     blocks += self.block(block_sizes[i], block_sizes[i+1], dr[i], batch_norm)
             if lng:
-                blocks.append(LinearNormalGamma(block_sizes[-1], outputSize))
+                blocks.append(LinearNormalGamma(block_sizes[-1], output_size))
             else:
-                blocks.append(SpectralNorm(torch.nn.Linear(block_sizes[-1], outputSize)))
+                blocks.append(SpectralNorm(torch.nn.Linear(block_sizes[-1], output_size)))
         else:
             if lng:
-                blocks = [LinearNormalGamma(inputSize, outputSize)]
+                blocks = [LinearNormalGamma(input_size, output_size)]
             else:
-                blocks = [SpectralNorm(torch.nn.Linear(inputSize, outputSize))]
+                blocks = [SpectralNorm(torch.nn.Linear(input_size, output_size))]
         self.fcn = torch.nn.Sequential(*blocks)
         #self.apply(init_weights)
         
-    def block(self, inputSize, outputSize, dr, batch_norm):
+    def block(self, input_size, output_size, dr, batch_norm):
         block = [
-            SpectralNorm(torch.nn.Linear(inputSize, outputSize))
+            SpectralNorm(torch.nn.Linear(input_size, output_size))
         ]
         if batch_norm:
-            block.append(torch.nn.BatchNorm1d(outputSize))
+            block.append(torch.nn.BatchNorm1d(output_size))
         block.append(torch.nn.LeakyReLU())
         if dr > 0.0:
             block.append(torch.nn.Dropout(dr))
@@ -141,17 +139,12 @@ class DNN(torch.nn.Module):
             logger.info(
                 f"Failed to load model weights at {weights_path} due to error {str(E)}"
             )
-        
-        
-        return 0
-    
-    
     
     def predict(self, x, batch_size = 32, return_numpy = True):
         
         if len(x.shape) != 2:
             logger.warning(
-                f"The input size should be (batch_size, input size), but recieved {x.shape}"
+                f"The input size should be (batch_size, input size), but received {x.shape}"
             )
             raise
             
@@ -166,11 +159,11 @@ class DNN(torch.nn.Module):
         if self.lng:
             with torch.no_grad():
                 if batch_size < x.shape[0]:
-                    X = np.array_split(x, x.shape[0] / batch_size)
+                    x_batch = np.array_split(x, x.shape[0] / batch_size)
                     pred = torch.cat([
                         torch.hstack(
                             self.forward(torch.from_numpy(_x).float().to(device))
-                        ) for _x in X
+                        ) for _x in x_batch
                     ]).cpu()
                 else:
                     pred = torch.hstack(
@@ -179,10 +172,10 @@ class DNN(torch.nn.Module):
         else:
             with torch.no_grad():
                 if batch_size < x.shape[0]:
-                    X = np.array_split(x, x.shape[0] / batch_size)
+                    x_batch = np.array_split(x, x.shape[0] / batch_size)
                     pred = torch.cat([
                         self.forward(torch.from_numpy(_x).float().to(device))
-                        for _x in X
+                        for _x in x_batch
                     ]).cpu()
                 else:
                     pred = self.forward(

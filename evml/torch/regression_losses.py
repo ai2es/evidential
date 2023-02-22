@@ -1,19 +1,11 @@
+""" Torch losses for regression models """
+
 import numpy as np
 import torch
-from torch import nn
 import torch.nn.functional as F
 
 
-"""
-
-    Losses for regression models 
-
-
-"""
-
-
 tol = torch.finfo(torch.float32).eps
-
 
 def nig_nll(y, gamma, v, alpha, beta):
     two_blambda = 2 * beta * (1 + v) + tol
@@ -26,17 +18,16 @@ def nig_nll(y, gamma, v, alpha, beta):
     return nll
 
 
-def nig_reg(y, gamma, v, alpha, beta):
+def nig_reg(y, gamma, v, alpha):
     error = F.l1_loss(y, gamma, reduction="none")
     evi = 2 * v + alpha
     return error * evi
 
-
-def evidential_regresssion_loss(y, pred, coeff=1.0):
+def evidential_regression_loss(y, pred):
     gamma, v, alpha, beta = pred
     loss_nll = nig_nll(y, gamma, v, alpha, beta)
     loss_reg = nig_reg(y, gamma, v, alpha, beta)
-    return loss_nll.mean() + coeff * loss_reg.mean()
+    return loss_nll.mean() + coef * loss_reg.mean()
 
 
 
@@ -45,7 +36,7 @@ def evidential_regresssion_loss(y, pred, coeff=1.0):
 
 def modified_mse(gamma, nu, alpha, beta, target, reduction='mean'):
     """
-    Lipschitz MSE loss of the "Improving evidential deep learning via multi-task learning."
+    Lipschitz MSE loss of the "Improving evidential deep learning via multitask learning."
     Args:
         gamma ([FloatTensor]): the output of the ENet.
         nu ([FloatTensor]): the output of the ENet.
@@ -58,20 +49,14 @@ def modified_mse(gamma, nu, alpha, beta, target, reduction='mean'):
     """
     mse = (gamma-target)**2
     c = get_mse_coef(gamma, nu, alpha, beta, target).detach()
-    modified_mse = mse*c
-    
-#     c1 = np.isfinite(c.item())
-#     c2 = np.isfinite(mse.item())  
-#     if not c1:
-#         modified_mse = 0.01 * mse
+    mod_mse = mse*c
     
     if reduction == 'mean': 
-        return modified_mse.mean()
+        return mod_mse.mean()
     elif reduction == 'sum':
-        return modified_mse.sum()
+        return mod_mse.sum()
     else:
-        return modified_mse
-
+        return mod_mse
 
 def get_mse_coef(gamma, nu, alpha, beta, y):
     """
@@ -95,43 +80,45 @@ def get_mse_coef(gamma, nu, alpha, beta, y):
     return torch.clip(c, min=False, max=1.)
 
 
-def check_mse_efficiency_alpha(gamma, nu, alpha, beta, y, reduction='mean'):
+def check_mse_efficiency_alpha(nu, alpha, beta):
     """
     Check the MSE loss (gamma - y)^2 can make negative gradients for alpha, which is
     a pseudo observation of the normal-inverse-gamma. We can use this to check the MSE
     loss can success(increase the pseudo observation, alpha).
     
     Args:
-        gamma, nu, alpha, beta(torch.Tensor) output values of the evidential network
-        y(torch.Tensor) the ground truth
-    
+        nu (torch.Tensor): nu output value of the evidential network
+        alpha (torch.Tensor): alpha output value of the evidential network
+        beta (torch.Tensor): beta output value of the evidential network
+
     Return:
         partial f / partial alpha(numpy.array) 
         where f => the NLL loss (BayesianDTI.loss.MarginalLikelihood)
     
     """
-    delta = (y-gamma)**2
     right = (torch.exp((torch.digamma(alpha+0.5)-torch.digamma(alpha))) - 1)*2*beta*(1+nu) / (nu + 1e-8)
-    return (right).detach()
+    return right.detach()
 
 
-def check_mse_efficiency_nu(gamma, nu, alpha, beta, y):
+def check_mse_efficiency_nu(gamma, nu, alpha, beta):
     """
     Check the MSE loss (gamma - y)^2 can make negative gradients for nu, which is
     a pseudo observation of the normal-inverse-gamma. We can use this to check the MSE
     loss can success(increase the pseudo observation, nu).
     
     Args:
-        gamma, nu, alpha, beta(torch.Tensor) output values of the evidential network
-        y(torch.Tensor) the ground truth
+        gamma (torch.Tensor): gamma output value of the evidential network
+        nu (torch.Tensor): nu output value of the evidential network
+        alpha (torch.Tensor): alpha output value of the evidential network
+        beta (torch.Tensor): beta output value of the evidential network
     
     Return:
         partial f / partial nu(torch.Tensor) 
         where f => the NLL loss (BayesianDTI.loss.MarginalLikelihood)
     """
     gamma, nu, alpha, beta = gamma.detach(), nu.detach(), alpha.detach(), beta.detach()
-    nu_1 = (nu+1) / (nu + tol)
-    return (beta*nu_1 / (alpha + tol))
+    nu_1 = (nu + 1) / (nu + tol)
+    return beta * nu_1 / (alpha + tol)
 
 
 class EvidentialMarginalLikelihood(torch.nn.modules.loss._Loss):
@@ -142,16 +129,18 @@ class EvidentialMarginalLikelihood(torch.nn.modules.loss._Loss):
     This is a negative log marginal likelihood, with integral mu and sigma.
     
     """
-    def __init__(self, size_average=None, reduce=None, reduction: str = 'mean', eps=1e-9):
+    def __init__(self, size_average=None, reduce=None, reduction: str = 'mean'):
         super(EvidentialMarginalLikelihood, self).__init__(size_average, reduce, reduction)
     
     def forward(self, gamma: torch.Tensor, nu: torch.Tensor, alpha: torch.Tensor, beta: torch.Tensor,
                 target: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            gamma, nu, alpha, beta -> outputs of prior network
-            
-            target -> target value
+            gamma (torch.Tensor): gamma output value of the evidential network
+            nu (torch.Tensor): nu output value of the evidential network
+            alpha (torch.Tensor): alpha output value of the evidential network
+            beta (torch.Tensor): beta output value of the evidential network
+            target (torch.Tensor): target value
             
         Return:
             (Tensor) Negative log marginal likelihood of EvidentialNet
@@ -171,28 +160,27 @@ class EvidentialMarginalLikelihood(torch.nn.modules.loss._Loss):
         elif self.reduction == 'sum':
             return (x1 + x2 + x3 + x4).sum()
         else:
-            return (x1 + x2 + x3 + x4)
+            return x1 + x2 + x3 + x4
 
     
 class EvidenceRegularizer(torch.nn.modules.loss._Loss):
     """
     Regularization for the regression prior network.
-    If the self.factor increases, the model output the wider(high confidence interval) predictions.
+    If self.factor increases, the model output the wider(high confidence interval) predictions.
     """
-    def __init__(self, size_average=None, reduce=None, reduction: str = 'mean', eps=1e-9, factor=0.1):
+    def __init__(self, size_average=None, reduce=None, reduction: str = 'mean', factor=0.1):
         super(EvidenceRegularizer, self).__init__(size_average, reduce, reduction)
         self.factor = factor
     
-    def forward(self, gamma: torch.Tensor, nu: torch.Tensor, alpha: torch.Tensor, beta: torch.Tensor,
+    def forward(self, gamma: torch.Tensor, nu: torch.Tensor, alpha: torch.Tensor,
                 target: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            gamma, nu, alpha, beta -> outputs of prior network
-            
-            target -> target value
-            
-            factor -> regularization strength
-        
+            gamma (torch.Tensor): gamma output value of the evidential network
+            nu (torch.Tensor): nu output value of the evidential network
+            alpha (torch.Tensor): alpha output value of the evidential network
+            target (torch.Tensor): target value
+
         Return:
             (Tensor) prior network regularization
             Loss = |y - gamma|*(2*nu + alpha) * factor
@@ -200,11 +188,11 @@ class EvidenceRegularizer(torch.nn.modules.loss._Loss):
         """
         loss_value =  torch.abs(target - gamma)*(2*nu + alpha) * self.factor
         if self.reduction == 'mean': 
-            return (loss_value).mean()
+            return loss_value.mean()
         elif self.reduction == 'sum':
-            return (loss_value).sum()
+            return loss_value.sum()
         else:
-            return (loss_value)
+            return loss_value
     
 
 class GaussianNLL(torch.nn.modules.loss._Loss):

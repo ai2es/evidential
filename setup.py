@@ -9,7 +9,7 @@ package_description = "<Provide short description of package>"
 url = "https://github.com/ai2es/" + project_name
 # Classifiers listed at https://pypi.org/classifiers/
 classifiers = ["Programming Language :: Python :: 3"]
-setup(name="evidential", # Change
+setup(name="evidential",  # Change
       version=version,
       description=package_description,
       url=url,
@@ -17,4 +17,3 @@ setup(name="evidential", # Change
       license="CC0 1.0",
       classifiers=classifiers,
       packages=["evml", "evml.keras", "evml.torch"])
-

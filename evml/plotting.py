@@ -1,8 +1,7 @@
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-from sklearn.metrics import confusion_matrix
-import numpy as np
 import os
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix
 from cartopy import crs as ccrs
 from cartopy import feature as cfeature
 
@@ -56,19 +55,19 @@ def conus_plot(df,
                title = "Predicted", 
                save_path = False):
     
-    latN = 54.0
-    latS = 20.0
-    lonW = -63.0
-    lonE = -125.0
-    cLat = (latN + latS)/2
-    cLon = (lonW + lonE )/2
+    lat_n = 54.0
+    lat_s = 20.0
+    lon_w = -63.0
+    lon_e = -125.0
+    c_lat = (lat_n + lat_s)/2
+    c_lon = (lon_w + lon_e )/2
     colors = {0:'lime', 1:'dodgerblue', 2:'red', 3:'black'}
     scale = 10
-    proj = ccrs.LambertConformal(central_longitude=cLon, central_latitude=cLat)
+    proj = ccrs.LambertConformal(central_longitude=c_lon, central_latitude=c_lat)
     res = '50m'  # Coarsest and quickest to display; other options are '10m' (slowest) and '50m'.
     fig = plt.figure(figsize=(18, 12))
     ax = plt.subplot(1, 1, 1, projection=proj)
-    ax.set_extent([lonW, lonE, latS, latN])
+    ax.set_extent([lon_w, lon_e, lat_s, lat_n])
     ax.add_feature(cfeature.LAND.with_scale(res))
     ax.add_feature(cfeature.OCEAN.with_scale(res))
     ax.add_feature(cfeature.COASTLINE.with_scale(res))

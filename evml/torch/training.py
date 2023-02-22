@@ -1,17 +1,14 @@
 import numpy as np
 import tqdm
 from collections import defaultdict
-import torch
-import torch.nn.functional as F
-from evml.class_losses import *
-from evml.metrics import compute_metrics
+from evml.torch.class_losses import *
+from evml.torch.metrics import compute_metrics
 
 
 def one_hot_embedding(labels, num_classes=10):
     # Convert to One Hot Encoding
     y = torch.eye(num_classes)
     return y[labels]
-
 
 def train_one_epoch(
     epoch,
@@ -24,7 +21,6 @@ def train_one_epoch(
     weights=None,
     device=None,
     uncertainty=False,
-    metric="accuracy",
     verbose=True,
 ):
 
@@ -56,21 +52,9 @@ def train_one_epoch(
             _, preds = torch.max(outputs, 1)
             loss = criterion(outputs, y.float(), epoch, num_classes, 10, weights, device)
 
-            match = torch.reshape(torch.eq(preds, labels).float(), (-1, 1))
-            acc = torch.mean(match)
             evidence = relu_evidence(outputs)
             alpha = evidence + 1
-            u = num_classes / torch.sum(alpha, dim=1, keepdim=True)
             prob = alpha / torch.sum(alpha, dim=1, keepdim=True)
-
-            total_evidence = torch.sum(evidence, 1, keepdim=True)
-            mean_evidence = torch.mean(total_evidence)
-            mean_evidence_succ = torch.sum(
-                torch.sum(evidence, 1, keepdim=True) * match
-            ) / torch.sum(match + 1e-20)
-            mean_evidence_fail = torch.sum(
-                torch.sum(evidence, 1, keepdim=True) * (1 - match)
-            ) / (torch.sum(torch.abs(1 - match)) + 1e-20)
 
         else:
             outputs = model(inputs)
@@ -111,7 +95,6 @@ def validate(
     weights=None,
     device=None,
     uncertainty=False,
-    metric="accuracy",
     verbose=True,
     return_preds=False,
 ):
@@ -142,21 +125,10 @@ def validate(
                 _, preds = torch.max(outputs, 1)
                 loss = criterion(outputs, y.float(), epoch, num_classes, 10, weights, device)
 
-                match = torch.reshape(torch.eq(preds, labels).float(), (-1, 1))
-                acc = torch.mean(match)
                 evidence = relu_evidence(outputs)
                 alpha = evidence + 1
                 u = num_classes / torch.sum(alpha, dim=1, keepdim=True)
                 prob = alpha / torch.sum(alpha, dim=1, keepdim=True)
-
-                total_evidence = torch.sum(evidence, 1, keepdim=True)
-                mean_evidence = torch.mean(total_evidence)
-                mean_evidence_succ = torch.sum(
-                    torch.sum(evidence, 1, keepdim=True) * match
-                ) / torch.sum(match + 1e-20)
-                mean_evidence_fail = torch.sum(
-                    torch.sum(evidence, 1, keepdim=True) * (1 - match)
-                ) / (torch.sum(torch.abs(1 - match)) + 1e-20)
 
                 if return_preds:
                     results_dict["pred_uncertainty"].append(u)

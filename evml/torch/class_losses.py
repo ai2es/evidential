@@ -97,9 +97,8 @@ def edl_loss(func, y, alpha, epoch_num, num_classes, annealing_step, weights=Non
     kl_div = annealing_coef * kl_divergence(kl_alpha, num_classes, device=device)
     return A + kl_div
 
-
 def edl_mse_loss(output, target, epoch_num, num_classes, annealing_step, weights=None, device=None):
-    if not device:
+    if device is None:
         device = get_device()
     evidence = relu_evidence(output)
     alpha = evidence + 1
