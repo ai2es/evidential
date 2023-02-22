@@ -23,7 +23,7 @@ def nig_reg(y, gamma, v, alpha):
     evi = 2 * v + alpha
     return error * evi
 
-def evidential_regression_loss(y, pred):
+def evidential_regression_loss(y, pred, coef=1.0):
     gamma, v, alpha, beta = pred
     loss_nll = nig_nll(y, gamma, v, alpha, beta)
     loss_reg = nig_reg(y, gamma, v, alpha, beta)
