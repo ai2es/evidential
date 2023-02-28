@@ -8,6 +8,12 @@ import torch.nn.functional as F
 tol = torch.finfo(torch.float32).eps
 
 def nig_nll(y, gamma, v, alpha, beta):
+    """Implements Normal Inverse Gamma-Negative Log Likelihood for
+       Deep Evidential Regression
+
+    Reference: https://www.mit.edu/~amini/pubs/pdf/deep-evidential-regression.pdf
+    Source: https://github.com/hxu296/torch-evidental-deep-learning
+    """
     two_blambda = 2 * beta * (1 + v) + tol
     nll = 0.5 * torch.log(np.pi / (v + tol)) \
             - alpha * torch.log(two_blambda + tol) \
@@ -17,18 +23,28 @@ def nig_nll(y, gamma, v, alpha, beta):
 
     return nll
 
-
 def nig_reg(y, gamma, v, alpha):
+    """Implements Normal Inverse Gamma Regularizer for Deep Evidential
+       Regression
+
+    Reference: https://www.mit.edu/~amini/pubs/pdf/deep-evidential-regression.pdf
+    Source: https://github.com/hxu296/torch-evidental-deep-learning
+    """
     error = F.l1_loss(y, gamma, reduction="none")
     evi = 2 * v + alpha
     return error * evi
 
 def evidential_regression_loss(y, pred, coef=1.0):
+    """Implements Evidential Regression Loss for Deep Evidential
+       Regression
+
+    Reference: https://www.mit.edu/~amini/pubs/pdf/deep-evidential-regression.pdf
+    Source: https://github.com/hxu296/torch-evidental-deep-learning
+    """
     gamma, v, alpha, beta = pred
     loss_nll = nig_nll(y, gamma, v, alpha, beta)
     loss_reg = nig_reg(y, gamma, v, alpha, beta)
     return loss_nll.mean() + coef * loss_reg.mean()
-
 
 
 ### code below based off https://github.com/deargen/MT-ENet
@@ -37,6 +53,10 @@ def evidential_regression_loss(y, pred, coef=1.0):
 def modified_mse(gamma, nu, alpha, beta, target, reduction='mean'):
     """
     Lipschitz MSE loss of the "Improving evidential deep learning via multitask learning."
+
+    Reference: https://www.mit.edu/~amini/pubs/pdf/deep-evidential-regression.pdf
+    Source: https://github.com/deargen/MT-ENet/tree/468822188f52e517b1ee8e386eea607b2b7d8829
+
     Args:
         gamma ([FloatTensor]): the output of the ENet.
         nu ([FloatTensor]): the output of the ENet.
@@ -63,6 +83,10 @@ def get_mse_coef(gamma, nu, alpha, beta, y):
     Return the coefficient of the MSE loss for each prediction.
     By assigning the coefficient to each MSE value, it clips the gradient of the MSE
     based on the threshold values U_nu, U_alpha, which are calculated by check_mse_efficiency_* functions.
+
+    Reference: https://www.mit.edu/~amini/pubs/pdf/deep-evidential-regression.pdf
+    Source: https://github.com/deargen/MT-ENet/tree/468822188f52e517b1ee8e386eea607b2b7d8829
+
     Args:
         gamma ([FloatTensor]): the output of the ENet.
         nu ([FloatTensor]): the output of the ENet.
@@ -85,7 +109,10 @@ def check_mse_efficiency_alpha(nu, alpha, beta):
     Check the MSE loss (gamma - y)^2 can make negative gradients for alpha, which is
     a pseudo observation of the normal-inverse-gamma. We can use this to check the MSE
     loss can success(increase the pseudo observation, alpha).
-    
+
+    Reference: https://www.mit.edu/~amini/pubs/pdf/deep-evidential-regression.pdf
+    Source: https://github.com/deargen/MT-ENet/tree/468822188f52e517b1ee8e386eea607b2b7d8829
+
     Args:
         nu (torch.Tensor): nu output value of the evidential network
         alpha (torch.Tensor): alpha output value of the evidential network
@@ -105,7 +132,10 @@ def check_mse_efficiency_nu(gamma, nu, alpha, beta):
     Check the MSE loss (gamma - y)^2 can make negative gradients for nu, which is
     a pseudo observation of the normal-inverse-gamma. We can use this to check the MSE
     loss can success(increase the pseudo observation, nu).
-    
+
+    Reference: https://www.mit.edu/~amini/pubs/pdf/deep-evidential-regression.pdf
+    Source: https://github.com/deargen/MT-ENet/tree/468822188f52e517b1ee8e386eea607b2b7d8829
+
     Args:
         gamma (torch.Tensor): gamma output value of the evidential network
         nu (torch.Tensor): nu output value of the evidential network
@@ -127,7 +157,9 @@ class EvidentialMarginalLikelihood(torch.nn.modules.loss._Loss):
     The target value is not a distribution (mu, std), but a just value.
     
     This is a negative log marginal likelihood, with integral mu and sigma.
-    
+
+    Reference: https://www.mit.edu/~amini/pubs/pdf/deep-evidential-regression.pdf
+    Source: https://github.com/deargen/MT-ENet/tree/468822188f52e517b1ee8e386eea607b2b7d8829
     """
     def __init__(self, size_average=None, reduce=None, reduction: str = 'mean'):
         super(EvidentialMarginalLikelihood, self).__init__(size_average, reduce, reduction)
@@ -167,6 +199,9 @@ class EvidenceRegularizer(torch.nn.modules.loss._Loss):
     """
     Regularization for the regression prior network.
     If self.factor increases, the model output the wider(high confidence interval) predictions.
+
+    Reference: https://www.mit.edu/~amini/pubs/pdf/deep-evidential-regression.pdf
+    Source: https://github.com/deargen/MT-ENet/tree/468822188f52e517b1ee8e386eea607b2b7d8829
     """
     def __init__(self, size_average=None, reduce=None, reduction: str = 'mean', factor=0.1):
         super(EvidenceRegularizer, self).__init__(size_average, reduce, reduction)
@@ -198,6 +233,9 @@ class EvidenceRegularizer(torch.nn.modules.loss._Loss):
 class GaussianNLL(torch.nn.modules.loss._Loss):
     """
     Negative Gaussian likelihood loss.
+
+    Reference: https://www.mit.edu/~amini/pubs/pdf/deep-evidential-regression.pdf
+    Source: https://github.com/deargen/MT-ENet/tree/468822188f52e517b1ee8e386eea607b2b7d8829
     """
     def __init__(self, size_average=None, reduce=None, reduction: str = 'mean'):
         super(GaussianNLL, self).__init__(size_average, reduce, reduction)
