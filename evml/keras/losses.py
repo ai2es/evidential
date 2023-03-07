@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 
 
-class DirichletEvidentialLoss:
+class DirichletEvidentialLoss(tf.keras.losses.Loss):
     
     def __init__(self, callback=False, name="dirichlet"):
         

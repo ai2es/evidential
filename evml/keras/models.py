@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import Input, Model
@@ -31,7 +32,7 @@ class EvidentialRegressorDNN(object):
                  optimizer="adam", loss_weights=None, use_noise=False, noise_sd=0.01, uncertainties=True,
                  lr=0.001, use_dropout=False, dropout_alpha=0.1, batch_size=128, epochs=2, kernel_reg='l2',
                  l1_weight=0.01, l2_weight=0.01, sgd_momentum=0.9, adam_beta_1=0.9, adam_beta_2=0.999,
-                 verbose=0, save_path='.'):
+                 verbose=0, save_path='.',  model_name='model/model.h5'):
         
         self.hidden_layers = hidden_layers
         self.hidden_neurons = hidden_neurons
@@ -57,6 +58,7 @@ class EvidentialRegressorDNN(object):
         self.epochs = epochs
         self.verbose = verbose
         self.save_path = save_path
+        self.model_name = model_name
         self.model = None
         self.optimizer_obj = None
         self.training_std = None
@@ -110,16 +112,22 @@ class EvidentialRegressorDNN(object):
         self.build_neural_network(inputs, outputs)
         self.model.fit(x, y, batch_size=self.batch_size, epochs=self.epochs, verbose=self.verbose, shuffle=True)
         self.training_var = np.var(y)
-        tf.keras.models.save_model(self.model, self.save_path+'/test_model/model.h5', save_format='h5')
         return
 
+    def save_model(self):
+        tf.keras.models.save_model(self.model,
+                                   os.path.join(self.save_path,
+                                                self.model_name),
+                                   save_format='h5')
+        return
     def predict(self, x, scaler=None):
         
         y_out = self.model.predict(x, batch_size=self.batch_size)
         if self.uncertainties:
-            return self.calc_uncertainties(y_out, scaler)
+            y_out_final = self.calc_uncertainties(y_out, scaler)
         else:
-            return y_out
+            y_out_final = y_out
+        return y_out_final
     
     def calc_uncertainties(self, preds, y_scaler):
         mu, v, alpha, beta = (preds[:, i] for i in range(preds.shape[1]))

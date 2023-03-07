@@ -2,15 +2,15 @@ name: evidential
 channels:
   - conda-forge
 dependencies:
-  - python =3.8
-  - numpy ~=1.23.5
+  - python
+  - numpy
   - scipy
-  - matplotlib ~=3.7.0
+  - matplotlib
   - xarray
   - netcdf4
   - dask
   - pandas
-  - scikit-learn ~=1.2.1
+  - scikit-learn
   - pyyaml
   - pytest
   - distributed
@@ -18,13 +18,13 @@ dependencies:
   - pyproj
   - jupyter
   - jupyterlab
-  - cartopy ~=0.21.1
-  - tqdm ~=4.64.1
+  - cartopy
+  - tqdm
   - sphinx
   - numba
   - cython
   - pip:
-    - torch ~=1.13.1
+    - torch
     - pyarrow
     - fastparquet
     - hagelslag

@@ -20,3 +20,4 @@ model:
     epochs: 500
     verbose: 0
     save_path: '.'
+    model_name: '/model/model.h5'
