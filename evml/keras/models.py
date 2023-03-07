@@ -32,7 +32,7 @@ class EvidentialRegressorDNN(object):
                  optimizer="adam", loss_weights=None, use_noise=False, noise_sd=0.01, uncertainties=True,
                  lr=0.001, use_dropout=False, dropout_alpha=0.1, batch_size=128, epochs=2, kernel_reg='l2',
                  l1_weight=0.01, l2_weight=0.01, sgd_momentum=0.9, adam_beta_1=0.9, adam_beta_2=0.999,
-                 verbose=0, save_path='.',  model_name='model/model.h5'):
+                 verbose=0, save_path='.',  model_name='model.h5'):
         
         self.hidden_layers = hidden_layers
         self.hidden_neurons = hidden_neurons
@@ -128,7 +128,7 @@ class EvidentialRegressorDNN(object):
         else:
             y_out_final = y_out
         return y_out_final
-    
+
     def calc_uncertainties(self, preds, y_scaler):
         mu, v, alpha, beta = (preds[:, i] for i in range(preds.shape[1]))
         if y_scaler:
