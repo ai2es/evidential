@@ -1,16 +1,13 @@
 import tensorflow as tf
-from tensorflow.keras import backend as K
 import numpy as np
-from tensorflow.keras.utils import get_registered_name
 
 
-class DirichletEvidentialLoss:
+class DirichletEvidentialLoss(tf.keras.losses.Loss):
     
-    def __init__(self, callback=False, weights=False, name = "dirichlet"):
+    def __init__(self, callback=False, name="dirichlet"):
         
         super().__init__()
         self.callback = callback
-        self.weights = weights
         self.__name__ = name
 
     def KL(self, alpha):
@@ -27,20 +24,12 @@ class DirichletEvidentialLoss:
         dg0 = tf.math.digamma(S_alpha)
         dg1 = tf.math.digamma(alpha)
 
-        if self.weights is not False:
-            kl = (
-                tf.reduce_sum(
-                    self.weights * (alpha - beta) * (dg1 - dg0), axis=1, keepdims=True
-                )
-                + lnB
-                + lnB_uni
-            )
-        else:
-            kl = (
-                tf.reduce_sum((alpha - beta) * (dg1 - dg0), axis=1, keepdims=True)
-                + lnB
-                + lnB_uni
-            )
+        
+        kl = (
+            tf.reduce_sum((alpha - beta) * (dg1 - dg0), axis=1, keepdims=True)
+            + lnB
+            + lnB_uni
+        )
         return kl
 
     def __call__(self, y, output):
@@ -50,18 +39,10 @@ class DirichletEvidentialLoss:
         S = tf.reduce_sum(alpha, axis=1, keepdims=True)
         m = alpha / S
 
-        if self.weights is not False:
-            A = tf.reduce_sum(self.weights * (y - m) ** 2, axis=1, keepdims=True)
-            B = tf.reduce_sum(
-                self.weights * alpha * (S - alpha) / (S * S * (S + 1)),
-                axis=1,
-                keepdims=True,
-            )
-        else:
-            A = tf.reduce_sum((y - m) ** 2, axis=1, keepdims=True)
-            B = tf.reduce_sum(
-                alpha * (S - alpha) / (S * S * (S + 1)), axis=1, keepdims=True
-            )
+        A = tf.reduce_sum((y - m) ** 2, axis=1, keepdims=True)
+        B = tf.reduce_sum(
+            alpha * (S - alpha) / (S * S * (S + 1)), axis=1, keepdims=True
+        )
 
         annealing_coef = tf.minimum(
             1.0, self.callback.this_epoch / self.callback.annealing_coeff
@@ -81,3 +62,40 @@ class DirichletEvidentialLoss:
 #     @classmethod
 #     def from_config(cls, config):
 #         return cls(**config)
+
+
+class EvidentialRegressionLoss(tf.keras.losses.Loss):
+    
+    def __init__(self, coeff=1.0):
+        super(EvidentialRegressionLoss, self).__init__()
+        self.coeff = coeff
+        
+    def NIG_NLL(self, y, gamma, v, alpha, beta, reduce=True):
+        v = tf.math.maximum(v, tf.keras.backend.epsilon())
+        twoBlambda = 2*beta*(1+v)
+        nll = 0.5*tf.math.log(np.pi/v)  \
+            - alpha*tf.math.log(twoBlambda)  \
+            + (alpha+0.5) * tf.math.log(v*(y-gamma)**2 + twoBlambda)  \
+            + tf.math.lgamma(alpha)  \
+            - tf.math.lgamma(alpha+0.5)
+
+        return tf.reduce_mean(nll) if reduce else nll
+
+    def NIG_Reg(self, y, gamma, v, alpha, reduce=True):
+        error = tf.abs(y-gamma)
+        evi = 2*v + alpha
+        reg = error*evi
+
+        return tf.reduce_mean(reg) if reduce else reg
+    
+    def call(self, y_true, evidential_output):
+        gamma, v, alpha, beta = tf.split(evidential_output, 4, axis=-1)
+        loss_nll = self.NIG_NLL(y_true, gamma, v, alpha, beta)
+        loss_reg = self.NIG_Reg(y_true, gamma, v, alpha, beta)
+
+        return loss_nll + self.coeff * loss_reg
+    
+    def get_config(self):
+        config = super(EvidentialRegressionLoss, self).get_config()
+        config.update({'coeff': self.coeff})
+        return config
