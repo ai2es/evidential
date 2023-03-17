@@ -91,7 +91,7 @@ class EvidentialRegressionLoss(tf.keras.losses.Loss):
     def call(self, y_true, evidential_output):
         gamma, v, alpha, beta = tf.split(evidential_output, 4, axis=-1)
         loss_nll = self.NIG_NLL(y_true, gamma, v, alpha, beta)
-        loss_reg = self.NIG_Reg(y_true, gamma, v, alpha, beta)
+        loss_reg = self.NIG_Reg(y_true, gamma, v, alpha)
 
         return loss_nll + self.coeff * loss_reg
     
