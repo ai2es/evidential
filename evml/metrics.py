@@ -1,9 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import defaultdict
+import os
 
 
-def compute_results(df, output_cols, mu, aleatoric, epistemic):
+def compute_results(df, output_cols, mu, aleatoric, epistemic, fn=None):
     mu_cols = [f"{x}_pred" for x in output_cols]
     err_cols = [f"{x}_err" for x in output_cols]
     e_cols = [f"{x}_e" for x in output_cols]
@@ -16,13 +17,30 @@ def compute_results(df, output_cols, mu, aleatoric, epistemic):
     legend_cols = ["Friction_velocity", "Sensible_heat", "Latent_heat"]
 
     # Compute attributes figure
-    regression_attributes(df, output_cols)
-    # Compute calibration curve and MAE versus sorted uncertainty
-    calibration(df, e_cols, err_cols, legend_cols)
+    try:
+        regression_attributes(df, output_cols, save_location=fn)
+    except:
+        pass
+    # Compute calibration curve and MAE versus sorted epistemic uncertainty
+    try:
+        calibration(df, e_cols, err_cols, legend_cols, "Epistemic", save_location=fn)
+    except:
+        pass
+    # Compute calibration curve and MAE versus sorted aleatoric uncertainty
+    try:
+        calibration(df, a_cols, err_cols, legend_cols, "Aleatoric", save_location=fn)
+    except:
+        pass
     # spread-skill
-    spread_skill(df, output_cols, legend_cols)
+    try:
+        spread_skill(df, output_cols, legend_cols, save_location=fn)
+    except:
+        pass
     # discard fraction
-    discard_fraction(df, output_cols, legend_cols)
+    try:
+        discard_fraction(df, output_cols, legend_cols, save_location=fn)
+    except:
+        pass
 
 
 def compute_coverage(df, col="var", quan="error"):
@@ -46,7 +64,9 @@ def calibration_curve(df, col="var", quan="error", bins=10):
     return cov_var, cov_mae, cov_mae_std, cov_var_std
 
 
-def calibration(dataframe, e_cols, mae_cols, legend_cols, bins=10):
+def calibration(
+    dataframe, e_cols, mae_cols, legend_cols, name, bins=10, save_location=False
+):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
     colors = ["r", "g", "b"]
     lcolors = ["pink", "lightgreen", "lightblue"]
@@ -72,19 +92,28 @@ def calibration(dataframe, e_cols, mae_cols, legend_cols, bins=10):
             ecolor=lcol,
         )
 
-        ax1.set_xlabel("Confidence percentile")
-        ax1.set_ylabel("MAE")
+    ax1.set_xlabel("Confidence percentile")
+    ax1.set_ylabel("MAE")
 
-        ax2.set_xlabel("Estimated confidence percentile (var)")
-        ax2.set_ylabel("Observed confidence percentile (MAE)")
+    ax2.set_xlabel(f"Estimated confidence percentile ({name})")
+    ax2.set_ylabel("Observed confidence percentile (MAE)")
 
     ax1.legend(legend_cols)
     ax2.legend(legend_cols)
     ax2.plot(cov_var, cov_var, "k--")
     plt.tight_layout()
 
+    if save_location:
+        plt.savefig(
+            os.path.join(save_location, f"{name}_coverage_calibration.pdf"),
+            dpi=300,
+            bbox_inches="tight",
+        )
 
-def spread_skill(df, output_cols, legend_cols, nbins=20):
+    plt.show()
+
+
+def spread_skill(df, output_cols, legend_cols, nbins=20, save_location=None):
     colors = ["r", "g", "b"]
     # legend_cols = ["Friction_velocity", "Sensible_heat", "Latent_heat"]
 
@@ -123,6 +152,7 @@ def spread_skill(df, output_cols, legend_cols, nbins=20):
                 histogram["bin"].append(bin_means[bin_no - 1])
                 histogram["mean"].append(mean)
                 histogram["std"].append(std)
+
             axs[j].errorbar(
                 histogram["bin"], histogram["mean"], yerr=histogram["std"], c=colors[k]
             )
@@ -144,12 +174,23 @@ def spread_skill(df, output_cols, legend_cols, nbins=20):
 
     plt.tight_layout()
 
+    if save_location:
+        plt.savefig(
+            os.path.join(save_location, "spread_skill.pdf"),
+            dpi=300,
+            bbox_inches="tight",
+        )
 
-def discard_fraction(df, output_cols, legend_cols):
+
+def discard_fraction(df, output_cols, legend_cols, save_location=False):
+    width = 7 if len(output_cols) == 1 else 10
+    height = 5
+    fig, axs = plt.subplots(1, len(output_cols), figsize=(width, height))
+    if len(output_cols) == 1:
+        axs = [axs]
     for col in output_cols:
         df = compute_coverage(df, col=f"{col}_e", quan=f"{col}_err")
         df = compute_coverage(df, col=f"{col}_a", quan=f"{col}_err")
-    fig, axs = plt.subplots(1, 3, figsize=(10, 3.5), sharey="row")
     for k, col in enumerate(output_cols):
         results = defaultdict(list)
         for percent in range(5, 105, 5):
@@ -169,8 +210,15 @@ def discard_fraction(df, output_cols, legend_cols):
     axs[0].set_ylabel("RMSE")
     plt.tight_layout()
 
+    if save_location:
+        plt.savefig(
+            os.path.join(save_location, "discard_fraction.pdf"),
+            dpi=300,
+            bbox_inches="tight",
+        )
 
-def regression_attributes(df, output_cols, nbins=11):
+
+def regression_attributes(df, output_cols, nbins=11, save_location=False):
     width = 7 if len(output_cols) == 1 else 10
     height = 5
     fig, axs = plt.subplots(1, len(output_cols), figsize=(width, height))
@@ -203,3 +251,9 @@ def regression_attributes(df, output_cols, nbins=11):
         axs[k].set_xlabel("Prediction")
 
     plt.tight_layout()
+    if save_location:
+        plt.savefig(
+            os.path.join(save_location, "regression_attributes.pdf"),
+            dpi=300,
+            bbox_inches="tight",
+        )

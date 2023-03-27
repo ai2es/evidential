@@ -3,9 +3,8 @@ import numpy as np
 
 
 class DirichletEvidentialLoss(tf.keras.losses.Loss):
-    
     def __init__(self, callback=False, name="dirichlet"):
-        
+
         super().__init__()
         self.callback = callback
         self.__name__ = name
@@ -24,7 +23,6 @@ class DirichletEvidentialLoss(tf.keras.losses.Loss):
         dg0 = tf.math.digamma(S_alpha)
         dg1 = tf.math.digamma(alpha)
 
-        
         kl = (
             tf.reduce_sum((alpha - beta) * (dg1 - dg0), axis=1, keepdims=True)
             + lnB
@@ -51,51 +49,60 @@ class DirichletEvidentialLoss(tf.keras.losses.Loss):
         C = annealing_coef * self.KL(alpha_hat)
         C = tf.reduce_mean(C, axis=1)
         return tf.reduce_mean(A + B + C)
-    
+
+
 #     def get_config(self):
 #         base_config = {}
 #         base_config['callback'] = self.callback
 #         base_config['weights'] = self.weights
 #         base_config['name'] = self.__name__
 #         return base_config
-    
+
 #     @classmethod
 #     def from_config(cls, config):
 #         return cls(**config)
 
 
 class EvidentialRegressionLoss(tf.keras.losses.Loss):
-    
     def __init__(self, coeff=1.0):
         super(EvidentialRegressionLoss, self).__init__()
         self.coeff = coeff
-        
+
     def NIG_NLL(self, y, gamma, v, alpha, beta, reduce=True):
         v = tf.math.maximum(v, tf.keras.backend.epsilon())
-        twoBlambda = 2*beta*(1+v)
-        nll = 0.5*tf.math.log(np.pi/v)  \
-            - alpha*tf.math.log(twoBlambda)  \
-            + (alpha+0.5) * tf.math.log(v*(y-gamma)**2 + twoBlambda)  \
-            + tf.math.lgamma(alpha)  \
-            - tf.math.lgamma(alpha+0.5)
+        twoBlambda = 2 * beta * (1 + v)
+        nll = (
+            0.5 * tf.math.log(np.pi / v)
+            - alpha * tf.math.log(twoBlambda)
+            + (alpha + 0.5) * tf.math.log(v * (y - gamma) ** 2 + twoBlambda)
+            + tf.math.lgamma(alpha)
+            - tf.math.lgamma(alpha + 0.5)
+        )
 
         return tf.reduce_mean(nll) if reduce else nll
 
     def NIG_Reg(self, y, gamma, v, alpha, reduce=True):
-        error = tf.abs(y-gamma)
-        evi = 2*v + alpha
-        reg = error*evi
+        error = tf.abs(y - gamma)
+        evi = 2 * v + alpha
+        reg = error * evi
 
         return tf.reduce_mean(reg) if reduce else reg
-    
+
     def call(self, y_true, evidential_output):
         gamma, v, alpha, beta = tf.split(evidential_output, 4, axis=-1)
         loss_nll = self.NIG_NLL(y_true, gamma, v, alpha, beta)
-        loss_reg = self.NIG_Reg(y_true, gamma, v, alpha, beta)
+        loss_reg = self.NIG_Reg(y_true, gamma, v, alpha)
 
         return loss_nll + self.coeff * loss_reg
-    
+
     def get_config(self):
         config = super(EvidentialRegressionLoss, self).get_config()
-        config.update({'coeff': self.coeff})
+        config.update({"coeff": self.coeff})
         return config
+
+
+def GaussianNLL(y_true, y_pred, reduce=True):
+    A = 0.5 * tf.math.log(2 * np.pi * y_pred[:, 1] + 1e-12)
+    B = (y_true[:, 0] - y_pred[:, 0]) ** 2 / (2 * y_pred[:, 1] ** 2 + 1e-12)
+    nll = A + B
+    return tf.reduce_mean(nll) if reduce else nll
