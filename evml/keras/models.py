@@ -73,7 +73,7 @@ class EvidentialRegressorDNN(object):
             outputs (int): Number of output predictor variables
         """
         
-        nn_input = Input(shape=(inputs,), name="input")
+        nn_input = Input(shape=(inputs.shape[1],), name="input")
         nn_model = nn_input
         
         if self.activation == 'leaky':
@@ -95,7 +95,7 @@ class EvidentialRegressorDNN(object):
                 nn_model = Dropout(self.dropout_alpha, name=f"dropout_h_{h:02d}")(nn_model)
             if self.use_noise:
                 nn_model = GaussianNoise(self.noise_sd, name=f"ganoise_h_{h:02d}")(nn_model)
-        nn_model = DenseNormalGamma(outputs, name='DenseNormalGamma')(nn_model)
+        nn_model = DenseNormalGamma(outputs.shape[-1], name='DenseNormalGamma')(nn_model)
         self.model = Model(nn_input, nn_model)
         if self.optimizer == "adam":
             self.optimizer_obj = Adam(learning_rate=self.lr, beta_1=self.adam_beta_1, beta_2=self.adam_beta_2)
@@ -109,15 +109,16 @@ class EvidentialRegressorDNN(object):
             metrics = None
         self.model.compile(optimizer=self.optimizer_obj, loss=self.loss,
                            loss_weights=self.loss_weights, metrics = metrics, run_eagerly=False)
+        self.training_var = [np.var(outputs[:, i]) for i in range(outputs.shape[1])]
 
     def fit(self, x, y):
-        inputs = x.shape[1]
-        if len(y.shape) == 1:
-            outputs = 1
-            self.training_var = [np.var(y)]
-        else:
-            outputs = y.shape[1]
-            self.training_var = [np.var(y[:, i]) for i in range(y.shape[1])]
+        # inputs = x.shape[1]
+        # if len(y.shape) == 1:
+        #     outputs = 1
+        #     self.training_var = [np.var(y)]
+        # else:
+        #     outputs = y.shape[1]
+        #     self.training_var = [np.var(y[:, i]) for i in range(y.shape[1])]
         self.build_neural_network(inputs, outputs)
         self.model.fit(x, y, batch_size=self.batch_size, epochs=self.epochs, verbose=self.verbose, shuffle=True)
         return
@@ -147,18 +148,21 @@ class EvidentialRegressorDNN(object):
 
     def calc_uncertainties(self, preds, y_scaler):
         mu, v, alpha, beta = np.split(preds, 4, axis=-1)
-        #mu, v, alpha, beta = (preds[:, i] for i in range(preds.shape[1]))
-        if y_scaler:
-            mu = y_scaler.inverse_transform(mu.reshape((mu.shape[0], -1))).squeeze()
-        else:
-            mu = mu.reshape((mu.shape[0], -1)).squeeze()
-        #aleatoric = np.sqrt((beta / (alpha - 1)) * self.training_var)
-        #epistemic = np.sqrt((beta / (v * (alpha - 1))) * self.training_var)
         aleatoric = beta / (alpha - 1)
         epistemic = beta / (v * (alpha - 1))
+        
+        if mu.shape[-1] == 1:
+            mu = np.expand_dims(mu, 1)
+            aleatoric = np.expand_dims(aleatoric, 1)
+            epistemic = np.expand_dims(epistemic, 1)
+        
+        if y_scaler:
+            mu = y_scaler.inverse_transform(mu)
+
         for i in range(mu.shape[-1]):
             aleatoric[:, i] *= self.training_var[i]
             epistemic[:, i] *= self.training_var[i]
+            
         return np.array([mu, np.sqrt(aleatoric), np.sqrt(epistemic)]).T
 
     
@@ -196,7 +200,7 @@ class ParametricRegressorDNN(EvidentialRegressorDNN):
                 nn_model = Dropout(self.dropout_alpha, name=f"dropout_h_{h:02d}")(nn_model)
             if self.use_noise:
                 nn_model = GaussianNoise(self.noise_sd, name=f"ganoise_h_{h:02d}")(nn_model)
-        nn_model = DenseNormal(outputs.shape[-1])(nn_model)
+        nn_model = DenseNormal(outputs.shape[-1])(nn_model) #Dense(2 * outputs.shape[-1], activation="sigmoid")(nn_model)
         self.model = Model(nn_input, nn_model)
         if self.optimizer == "adam":
             self.optimizer_obj = Adam(learning_rate=self.lr, beta_1=self.adam_beta_1, beta_2=self.adam_beta_2)
@@ -222,10 +226,11 @@ class ParametricRegressorDNN(EvidentialRegressorDNN):
         
     def calc_uncertainties(self, preds, y_scaler):
         mu, aleatoric = np.split(preds, 2, axis=-1)
+        if mu.shape[-1] == 1:
+            mu = np.expand_dims(mu)
+            aleatoric = np.expand_dims(aleatoric)
         if y_scaler:
-            mu = y_scaler.inverse_transform(mu.reshape((mu.shape[0], -1))).squeeze()
-        else:
-            mu = mu.reshape((mu.shape[0], -1)).squeeze()
-        for i in range(mu.shape[-1]):
+            mu = y_scaler.inverse_transform(mu)
+        for i in range(aleatoric.shape[-1]):
             aleatoric[:, i] *= self.training_var[i]
         return mu, np.sqrt(aleatoric)

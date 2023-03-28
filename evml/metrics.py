@@ -115,34 +115,40 @@ def calibration(
 
 def spread_skill(df, output_cols, legend_cols, nbins=20, save_location=None):
     colors = ["r", "g", "b"]
-    # legend_cols = ["Friction_velocity", "Sensible_heat", "Latent_heat"]
-
+    uncertainty_cols = ["e", "a"]
     fig, axs = plt.subplots(1, 2, figsize=(10, 5))
     lower_bounds = defaultdict(list)
     upper_bounds = defaultdict(list)
     for k, col in enumerate(output_cols):
-        for j, u in enumerate(["e", "a"]):
-            upper = 1.01 * max(df[f"{col}_{u}"])
-            lower = 0.99 * min(df[f"{col}_{u}"])
-            lower = (
-                lower
-                if np.isfinite(lower)
-                else 0.99 * max(df[f"{col}_{u}"][~df[f"{col}_{u}"].isna()])
-            )
-            upper = (
-                upper
-                if np.isfinite(upper)
-                else 1.01 * min(df[f"{col}_{u}"][~df[f"{col}_{u}"].isna()])
-            )
-
-            if (np.log10(upper) - np.log10(lower)) > 2:
+        for j, u in enumerate(uncertainty_cols):
+            
+            upper = max(df[f"{col}_{u}"][~df[f"{col}_{u}"].isna()])
+            lower = min(df[f"{col}_{u}"][~df[f"{col}_{u}"].isna()])
+            
+#             upper = 1.01 * max(df[f"{col}_{u}"])
+#             lower = 0.99 * min(df[f"{col}_{u}"])
+            
+#             lower = (
+#                 lower
+#                 if np.isfinite(lower)
+#                 else 0.99 * min(df[f"{col}_{u}"][~df[f"{col}_{u}"].isna()])
+#             )
+#             upper = (
+#                 upper
+#                 if np.isfinite(upper)
+#                 else 1.01 * max(df[f"{col}_{u}"][~df[f"{col}_{u}"].isna()])
+#             )
+            
+            if upper > 0 and lower > 0 and (np.log10(upper) - np.log10(lower)) > 2:
                 bins = np.logspace(np.log10(lower), np.log10(upper), nbins)
             else:
                 bins = np.linspace(lower, upper, nbins)
+            
             bin_range = np.digitize(df[f"{col}_{u}"].values, bins=bins, right=True)
             bin_means = [
                 df[f"{col}_{u}"][bin_range == i].mean() for i in range(1, len(bins))
             ]
+        
             histogram = defaultdict(list)
             for bin_no in range(1, max(list(set(bin_range)))):
                 idx = np.where(bin_range == bin_no)
@@ -159,6 +165,7 @@ def spread_skill(df, output_cols, legend_cols, nbins=20, save_location=None):
             axs[j].legend(legend_cols)
             lower_bounds[u].append(bin_means[0])
             upper_bounds[u].append(bin_means[-2])
+            
     bins = np.linspace(min(lower_bounds["e"]), max(upper_bounds["e"]), nbins)
     axs[0].plot(bins, bins, color="k", ls="--")
     bins = np.linspace(min(lower_bounds["a"]), max(upper_bounds["a"]), nbins)

@@ -101,8 +101,9 @@ class EvidentialRegressionLoss(tf.keras.losses.Loss):
         return config
 
 
-def GaussianNLL(y_true, y_pred, reduce=True):
-    A = 0.5 * tf.math.log(2 * np.pi * y_pred[:, 1] + 1e-12)
-    B = (y_true[:, 0] - y_pred[:, 0]) ** 2 / (2 * y_pred[:, 1] ** 2 + 1e-12)
-    nll = A + B
-    return tf.reduce_mean(nll) if reduce else nll
+def GaussianNLL(y, y_pred, reduce=True):
+    ax = list(range(1, len(y.shape)))
+    mu, sigma = tf.split(y_pred, 2, axis=-1)
+    logprob = -tf.math.log(sigma) - 0.5*tf.math.log(2*np.pi) - 0.5*((y-mu)/sigma)**2
+    loss = tf.reduce_mean(-logprob, axis=ax)
+    return tf.reduce_mean(loss) if reduce else loss

@@ -15,10 +15,9 @@ import tensorflow as tf
 
 from keras import backend as K
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
-from evml.keras.models import ParametricRegressorDNN
+from evml.keras.models import EvidentialRegressorDNN
 from evml.keras.callbacks import get_callbacks
 from evml.splitting import load_splitter
-from evml.keras.monte_carlo import monte_carlo_ensemble
 from evml.metrics import compute_results
 from evml.keras.seed import seed_everything
 
@@ -43,19 +42,18 @@ class Objective(BaseObjective):
             del conf["callbacks"]["ModelCheckpoint"]
         # Only use 1 data split
         conf["data"]["n_splits"] = 1
-        return trainer(conf, save=False, trial = trial)
+        return trainer(conf, save=False, trial=trial)
 
 
-def trainer(conf, evaluate=True, trial = False):
+def trainer(conf, evaluate=True, trial=False):
     # load seed from the config and set globally
     seed = conf["seed"]
     seed_everything(seed)
-    
+
     save_loc = conf["save_loc"]
     data_params = conf["data"]
     training_metric = conf["training_metric"]
-    monte_carlo_passes = conf["monte_carlo_passes"]
-    
+
     model_params = conf["model"]
     model_params["save_path"] = save_loc
 
@@ -87,9 +85,11 @@ def trainer(conf, evaluate=True, trial = False):
 
     # Train ensemble of parametric models
     ensemble_mu = np.zeros((n_splits, _test_data.shape[0], len(output_cols)))
-    ensemble_var = np.zeros((n_splits, _test_data.shape[0], len(output_cols)))
+    ensemble_ale = np.zeros((n_splits, _test_data.shape[0], len(output_cols)))
+    ensemble_epi = np.zeros((n_splits, _test_data.shape[0], len(output_cols)))
 
     best_model = None
+    best_split = None
     best_model_score = 1e10
     for data_seed in tqdm.tqdm(range(n_splits)):
         # select indices from the split, data splits
@@ -99,19 +99,19 @@ def trainer(conf, evaluate=True, trial = False):
             _train_data.iloc[train_index].copy(),
             _train_data.iloc[valid_index].copy(),
         )
-        # preprocess x-transformations 
+        # preprocess x-transformations
         x_scaler, y_scaler = RobustScaler(), MinMaxScaler((0, 1))
         x_train = x_scaler.fit_transform(train_data[input_cols])
         x_valid = x_scaler.transform(valid_data[input_cols])
         x_test = x_scaler.transform(test_data[input_cols])
-        
+
         # preprocess y-transformations
         y_train = y_scaler.fit_transform(train_data[output_cols])
         y_valid = y_scaler.transform(valid_data[output_cols])
         y_test = y_scaler.transform(test_data[output_cols])
 
-        # load the model 
-        model = ParametricRegressorDNN(**model_params)
+        # load the model
+        model = EvidentialRegressorDNN(**model_params)
         model.build_neural_network(x_train, y_train)
 
         # Get callbacks
@@ -128,7 +128,7 @@ def trainer(conf, evaluate=True, trial = False):
             verbose=model.verbose,
             shuffle=True,
         )
-        
+
         # If ECHO is running this script, n_splits has been set to 1, return the metric here
         if trial is not False:
             return {x: min(x) for x in history.history}
@@ -138,15 +138,13 @@ def trainer(conf, evaluate=True, trial = False):
             best_model = model
             model.model_name = "best.h5"
             model.save_model()
+            best_split = data_seed
 
         # evaluate on the test holdout split
-        y_pred = model.predict(x_test)
-        mu, aleatoric = model.calc_uncertainties(y_pred, y_scaler)
-        if mu.shape[-1] == 1:
-            mu = np.expand_dims(mu)
-            aleatoric = np.expand_dims(aleatoric, 1)
+        mu, aleatoric, epistemic = model.predict(x_test)
         ensemble_mu[data_seed] = mu
-        ensemble_var[data_seed] = aleatoric
+        ensemble_ale[data_seed] = aleatoric
+        ensemble_epi[data_seed] = epistemic
 
         # check if this is the best model
         del model
@@ -154,44 +152,25 @@ def trainer(conf, evaluate=True, trial = False):
         gc.collect()
 
     # Compute uncertainties
-    ensemble_mu = np.mean(ensemble_mu, axis=0)
-    ensemble_epistemic = np.var(ensemble_mu, axis=0)
-    ensemble_aleatoric = np.mean(ensemble_var, axis=0)
-
-    # Compute epistemic uncertainty via MC-dropout
-    mc_mu, mc_aleatoric = monte_carlo_ensemble(
-        best_model, x_test, y_test, forward_passes=monte_carlo_passes, y_scaler=y_scaler
-    )
-    mc_epistemic = np.var(mc_mu)
-    mc_aleatoric = np.mean(mc_aleatoric)
+    mu = ensemble_mu[best_split]
+    epistemic = ensemble_epi[best_split]
+    aleatoric = ensemble_ale[best_split]
 
     # add to df and save
-    _test_data[[f"{x}_ensemble_pred" for x in output_cols]] = ensemble_mu
-    _test_data[[f"{x}_mc_pred" for x in output_cols]] = mc_mu[:, :, 0]
-    _test_data[[f"{x}_ensemble_ale" for x in output_cols]] = ensemble_aleatoric
-    _test_data[[f"{x}_mc_ale" for x in output_cols]] = mc_aleatoric
-    _test_data[[f"{x}_ensemble_epi" for x in output_cols]] = ensemble_epistemic
-    _test_data[[f"{x}_mc_epi" for x in output_cols]] = mc_epistemic
+    _test_data[[f"{x}_pred" for x in output_cols]] = mu
+    _test_data[[f"{x}_ale" for x in output_cols]] = aleatoric
+    _test_data[[f"{x}_epi" for x in output_cols]] = epistemic
     _test_data.to_csv(os.path.join(save_loc, "test.csv"))
 
     # make some figures
-    os.makedirs(os.path.join(save_loc, "ensemble"), exist_ok=True)
+    os.makedirs(os.path.join(save_loc, "evidential"), exist_ok=True)
     compute_results(
         _test_data,
         output_cols,
-        ensemble_mu,
-        ensemble_aleatoric,
-        ensemble_epistemic,
-        fn=os.path.join(save_loc, "ensemble"),
-    )
-    os.makedirs(os.path.join(save_loc, "ensemble"), exist_ok=True)
-    compute_results(
-        _test_data,
-        output_cols,
-        mc_mu[:, :, 0],
-        mc_aleatoric,
-        mc_epistemic,
-        fn=os.path.join(save_loc, "monte_carlo"),
+        mu,
+        aleatoric,
+        epistemic,
+        fn=os.path.join(save_loc, "evidential"),
     )
 
 
