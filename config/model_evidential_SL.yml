@@ -17,9 +17,18 @@ data:
         'kinematic_latent_heat_flux:surface:g_kg-1_m_s-1'
     ]
     splitter: "GroupShuffleSplit"
-    preprocessing:
-        inputs: "robust"
-        outputs: "symmetric"
+    scaler_x:
+        type: "robust"
+        params:
+            copy: true
+            with_mean: true
+            with_std: true
+    scaler_y:
+        type: "symmetric"
+        params:
+            copy: true
+            with_mean: true
+            with_std: true
     split_col: "day"
     n_splits: 10
 
