@@ -1,5 +1,7 @@
 seed: 1000
-save_loc: "/glade/work/schreck/repos/evidential/main/results"
+save_loc: "/glade/work/schreck/repos/evidential/main/results/echo_evidential"
+training_metric: "val_loss"
+monte_carlo_passes: 10
 
 data:
     save_loc: "/glade/p/cisl/aiml/ai2es/surfacelayer/cabauw_derived_data_20210720.csv"
@@ -15,55 +17,54 @@ data:
         'kinematic_latent_heat_flux:surface:g_kg-1_m_s-1'
     ]
     splitter: "GroupShuffleSplit"
-    scaler:
-        x: "StandardScaler"
-        y: "StandardScaler"
+    preprocessing:
+        inputs: "robust"
+        outputs: "symmetric"
     split_col: "day"
-    n_splits: 3
+    n_splits: 10
 
 model:
-    hidden_layers: 4
-    hidden_neurons: 256
+    hidden_layers: 1
+    hidden_neurons: 4500
     activation: "relu"
     optimizer: "adam"
     metrics: "mae"
-    evidential_coef: 0.0
-    uncertainties: False
+    evidential_coef: 0.1
+    uncertainties: True
     lr: 0.00001
     kernel_reg: 'l2'
     l1_weight: 0.0
-    l2_weight: 0.0000001
+    l2_weight: 0.0
     batch_size: 256
     use_noise: False
-    noise_sd: 0.0
-    use_dropout: False
+    use_dropout: True
     dropout_alpha: 0.2
-    epochs: 1
+    epochs: 100
     verbose: 2
     
     
 callbacks:
   EarlyStopping:
-    monitor: "val_mae"
+    monitor: "val_loss"
     patience: 5
     mode: "min"
-    verbose: 1
+    verbose: 0
   ReduceLROnPlateau: 
-    monitor: "val_mae"
+    monitor: "val_loss"
     factor: 0.1
     patience: 2
     min_lr: 1.0e-12
     min_delta: 1.0e-08
     mode: "min"
-    verbose: 1
+    verbose: 0
   CSVLogger:
-    filename: "training_log.txt"
+    filename: "training_log.csv"
     separator: " "
     append: False
   ModelCheckpoint:
     filepath: "model.h5"
-    monitor: "val_mae"
+    monitor: "val_loss"
     save_weights: True
     save_best_only: True
     mode: "min"
-    verbose: 1
+    verbose: 0

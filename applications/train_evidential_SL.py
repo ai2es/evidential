@@ -9,16 +9,17 @@ import sys
 import os
 import gc
 import warnings
+import optuna
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-from keras import backend as K
-from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
+from tensorflow.keras import backend as K
 from evml.keras.models import EvidentialRegressorDNN
 from evml.keras.callbacks import get_callbacks
 from evml.splitting import load_splitter
 from evml.metrics import compute_results
+from evml.preprocessing import load_preprocessing
 from evml.keras.seed import seed_everything
 
 
@@ -42,10 +43,15 @@ class Objective(BaseObjective):
             del conf["callbacks"]["ModelCheckpoint"]
         # Only use 1 data split
         conf["data"]["n_splits"] = 1
-        return trainer(conf, save=False, trial=trial)
+
+        try:
+            return trainer(conf, trial=trial)
+        except Exception as E:
+            logger.warning(f"Trial {trial.number} failed due to error {str(E)}")
+            raise optuna.TrialPruned()
 
 
-def trainer(conf, evaluate=True, trial=False):
+def trainer(conf, trial=False):
     # load seed from the config and set globally
     seed = conf["seed"]
     seed_everything(seed)
@@ -100,15 +106,25 @@ def trainer(conf, evaluate=True, trial=False):
             _train_data.iloc[valid_index].copy(),
         )
         # preprocess x-transformations
-        x_scaler, y_scaler = RobustScaler(), MinMaxScaler((0, 1))
-        x_train = x_scaler.fit_transform(train_data[input_cols])
-        x_valid = x_scaler.transform(valid_data[input_cols])
-        x_test = x_scaler.transform(test_data[input_cols])
+        x_scaler, y_scaler = load_preprocessing(conf, seed=seed)
+        if x_scaler:
+            x_train = x_scaler.fit_transform(train_data[input_cols])
+            x_valid = x_scaler.transform(valid_data[input_cols])
+            x_test = x_scaler.transform(test_data[input_cols])
+        else:
+            x_train = train_data[input_cols].values
+            x_valid = valid_data[input_cols].values
+            x_test = test_data[input_cols].values
 
         # preprocess y-transformations
-        y_train = y_scaler.fit_transform(train_data[output_cols])
-        y_valid = y_scaler.transform(valid_data[output_cols])
-        y_test = y_scaler.transform(test_data[output_cols])
+        if y_scaler:
+            y_train = y_scaler.fit_transform(train_data[output_cols])
+            y_valid = y_scaler.transform(valid_data[output_cols])
+            y_test = y_scaler.transform(test_data[output_cols])
+        else:
+            y_train = train_data[output_cols].values
+            y_valid = valid_data[output_cols].values
+            y_test = test_data[output_cols].values
 
         # load the model
         model = EvidentialRegressorDNN(**model_params)
@@ -131,7 +147,9 @@ def trainer(conf, evaluate=True, trial=False):
 
         # If ECHO is running this script, n_splits has been set to 1, return the metric here
         if trial is not False:
-            return {x: min(x) for x in history.history}
+            return {
+                x: min(y) for x, y in history.history.items() if x not in trial.params
+            }
 
         # Save if its the best model
         if min(history.history[training_metric]) < best_model_score:
@@ -179,6 +197,17 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python train_SL.py model.yml")
         sys.exit()
+
+    # Set up logger to print stuff
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+    formatter = logging.Formatter("%(levelname)s:%(name)s:%(message)s")
+
+    # Stream output to stdout
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    ch.setFormatter(formatter)
+    root.addHandler(ch)
 
     config = sys.argv[1]
     with open(config) as cf:
