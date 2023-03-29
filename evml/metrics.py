@@ -174,10 +174,11 @@ def spread_skill(df, output_cols, legend_cols, nbins=20, save_location=None):
     axs[1].set_xlabel("Spread (Aleatoric uncertainty)")
     axs[0].set_ylabel("Skill score (RMSE)")
 
-    # axs[0].set_xscale("log")
-    # axs[0].set_yscale("log")
-    # axs[1].set_xscale("log")
-    # axs[1].set_yscale("log")
+    if len(output_cols) > 1:
+        axs[0].set_xscale("log")
+        axs[0].set_yscale("log")
+        axs[1].set_xscale("log")
+        axs[1].set_yscale("log")
 
     plt.tight_layout()
 

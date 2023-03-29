@@ -129,7 +129,7 @@ def trainer(conf, trial=False):
         # load the model
         model = EvidentialRegressorDNN(**model_params)
         model.build_neural_network(x_train, y_train)
-
+        
         # Get callbacks
         callbacks = get_callbacks(conf, path_extend="")
 
@@ -153,13 +153,14 @@ def trainer(conf, trial=False):
 
         # Save if its the best model
         if min(history.history[training_metric]) < best_model_score:
-            best_model = model
+            best_model = model.model.get_weights()
             model.model_name = "best.h5"
             model.save_model()
             best_split = data_seed
 
         # evaluate on the test holdout split
-        mu, aleatoric, epistemic = model.predict(x_test)
+        result = model.predict(x_test, scaler = y_scaler)
+        mu, aleatoric, epistemic = result
         ensemble_mu[data_seed] = mu
         ensemble_ale[data_seed] = aleatoric
         ensemble_epi[data_seed] = epistemic

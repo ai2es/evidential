@@ -132,8 +132,7 @@ class EvidentialRegressorDNN(object):
         self.model = Model(nn_input, nn_model)
         if self.optimizer == "adam":
             self.optimizer_obj = Adam(
-                learning_rate=self.lr, beta_1=self.adam_beta_1, beta_2=self.adam_beta_2
-            )
+                learning_rate=self.lr)#, beta_1=self.adam_beta_1, beta_2=self.adam_beta_2)
         elif self.optimizer == "sgd":
             self.optimizer_obj = SGD(learning_rate=self.lr, momentum=self.sgd_momentum)
         if self.metrics == "mae":
@@ -209,7 +208,7 @@ class EvidentialRegressorDNN(object):
             aleatoric[:, i] *= self.training_var[i]
             epistemic[:, i] *= self.training_var[i]
 
-        return np.array([mu, np.sqrt(aleatoric), np.sqrt(epistemic)]).T
+        return mu, np.sqrt(aleatoric), np.sqrt(epistemic)
 
 
 class ParametricRegressorDNN(EvidentialRegressorDNN):
