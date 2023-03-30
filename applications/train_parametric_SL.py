@@ -13,6 +13,7 @@ import warnings
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from argparse import ArgumentParser
 
 from keras import backend as K
 from evml.keras.models import ParametricRegressorDNN
@@ -22,6 +23,7 @@ from evml.keras.monte_carlo import monte_carlo_ensemble
 from evml.metrics import compute_results
 from evml.preprocessing import load_preprocessing
 from evml.keras.seed import seed_everything
+from evml.pbs import launch_pbs_jobs
 
 
 warnings.filterwarnings("ignore")
@@ -128,22 +130,13 @@ def trainer(conf, trial=False):
 
         # load the model
         model = ParametricRegressorDNN(**model_params)
-        model.build_neural_network(x_train, y_train)
-
-        # Get callbacks
-        callbacks = get_callbacks(conf, path_extend="")
-
-        # fit model to training data
-        history = model.model.fit(
+        model.fit(
             x_train,
             y_train,
             validation_data=(x_valid, y_valid),
-            batch_size=model.batch_size,
-            callbacks=callbacks,
-            epochs=model.epochs,
-            verbose=model.verbose,
-            shuffle=True,
+            callbacks=get_callbacks(conf, path_extend="")
         )
+        history = model.model.history
 
         # If ECHO is running this script, n_splits has been set to 1, return the metric here
         if trial is not False:
@@ -215,11 +208,37 @@ def trainer(conf, trial=False):
 
 if __name__ == "__main__":
 
-    if len(sys.argv) < 2:
-        print("Usage: python train_SL.py model.yml")
-        sys.exit()
+    description = "Train an parametric regression model on a surface layer data set"
+    parser = ArgumentParser(description=description)
+    parser.add_argument(
+        "-c",
+        dest="model_config",
+        type=str,
+        default=False,
+        help="Path to the model configuration (yml) containing your inputs.",
+    )
+    parser.add_argument(
+        "-l",
+        dest="launch",
+        type=int,
+        default=0,
+        help="Submit 1 worker to PBS.",
+    )
+    args_dict = vars(parser.parse_args())
+    config = args_dict.pop("model_config")
+    launch = bool(int(args_dict.pop("launch")))
 
-    config = sys.argv[1]
+    # Set up logger to print stuff
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+    formatter = logging.Formatter("%(levelname)s:%(name)s:%(message)s")
+
+    # Stream output to stdout
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    ch.setFormatter(formatter)
+    root.addHandler(ch)
+
     with open(config) as cf:
         conf = yaml.load(cf, Loader=yaml.FullLoader)
 
@@ -232,4 +251,11 @@ if __name__ == "__main__":
         with open(os.path.join(save_loc, "model.yml"), "w") as fid:
             yaml.dump(conf, fid)
 
+    if launch:
+        from pathlib import Path
+        script_path = Path(__file__).absolute()
+        logging.info("Launching to PBS")
+        launch_pbs_jobs(config, script_path)
+        sys.exit()
+        
     result = trainer(conf)

@@ -132,7 +132,8 @@ class EvidentialRegressorDNN(object):
         self.model = Model(nn_input, nn_model)
         if self.optimizer == "adam":
             self.optimizer_obj = Adam(
-                learning_rate=self.lr)#, beta_1=self.adam_beta_1, beta_2=self.adam_beta_2)
+                learning_rate=self.lr
+            )  # , beta_1=self.adam_beta_1, beta_2=self.adam_beta_2)
         elif self.optimizer == "sgd":
             self.optimizer_obj = SGD(learning_rate=self.lr, momentum=self.sgd_momentum)
         if self.metrics == "mae":
@@ -150,7 +151,17 @@ class EvidentialRegressorDNN(object):
         )
         self.training_var = [np.var(outputs[:, i]) for i in range(outputs.shape[1])]
 
-    def fit(self, x, y):
+    def fit(
+        self,
+        x,
+        y,
+        validation_data=None,
+        callbacks=None,
+        initial_epoch=0,
+        steps_per_epoch=None,
+        workers=1,
+        use_multiprocessing=False,
+    ):
         # inputs = x.shape[1]
         # if len(y.shape) == 1:
         #     outputs = 1
@@ -160,13 +171,20 @@ class EvidentialRegressorDNN(object):
         #     self.training_var = [np.var(y[:, i]) for i in range(y.shape[1])]
         self.build_neural_network(x, y)
         self.model.fit(
-            x,
-            y,
+            x=x,
+            y=y,
+            validation_data=validation_data,
+            callbacks=callbacks,
             batch_size=self.batch_size,
             epochs=self.epochs,
             verbose=self.verbose,
+            initial_epoch=initial_epoch,
+            steps_per_epoch=steps_per_epoch,
+            workers=workers,
+            use_multiprocessing=use_multiprocessing,
             shuffle=True,
         )
+
         return
 
     def save_model(self):
@@ -251,9 +269,7 @@ class ParametricRegressorDNN(EvidentialRegressorDNN):
                 nn_model = GaussianNoise(self.noise_sd, name=f"ganoise_h_{h:02d}")(
                     nn_model
                 )
-        nn_model = DenseNormal(outputs.shape[-1])(
-            nn_model
-        )  # Dense(2 * outputs.shape[-1], activation="sigmoid")(nn_model)
+        nn_model = DenseNormal(outputs.shape[-1])(nn_model)
         self.model = Model(nn_input, nn_model)
         if self.optimizer == "adam":
             self.optimizer_obj = Adam(

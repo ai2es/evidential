@@ -68,7 +68,7 @@ callbacks:
     verbose: 0
   CSVLogger:
     filename: "training_log.csv"
-    separator: " "
+    separator: ","
     append: False
   ModelCheckpoint:
     filepath: "model.h5"
@@ -77,3 +77,21 @@ callbacks:
     save_best_only: True
     mode: "min"
     verbose: 0
+    
+pbs:
+  name: ev-trainer
+  select: 1
+  ncpus: 8
+  ngpus: 1
+  mem: 128GB
+  walltime: 12:00:00
+  gpu_type: v100
+  account: NAML0001
+  queue: casper
+  env_setup: |
+    source ~/.bashrc 
+    module unload cuda cudnn 
+    conda activate evidential
+    CUDNN_PATH=$(dirname $(python -c "import nvidia.cudnn;print(nvidia.cudnn.__file__)"))
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CONDA_PREFIX/lib/:$CUDNN_PATH/lib
+    export XLA_FLAGS=--xla_gpu_cuda_data_dir=$CONDA_PREFIX

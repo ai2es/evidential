@@ -2,7 +2,7 @@ log: True
 save_path: "/glade/work/schreck/repos/evidential/main/results/echo_evidential"
 
 pbs:
-  jobs: 1
+  jobs: 15
   bash: [
       "source ~/.bashrc", 
       "module unload cuda cudnn", 
@@ -38,6 +38,12 @@ optuna:
         name: "lr"
         low: 1.0e-06
         high: 1.0e-02
+    model:l2_weight:
+      type: "loguniform"
+      settings:
+        name: "l2_weight"
+        low: 1.0e-12
+        high: 1.0e-02
     model:hidden_layers:
       type: "int"
       settings:
@@ -62,13 +68,13 @@ optuna:
         name: "batch_size"
         low: 10
         high: 10000
-    data:preprocessing:inputs:
+    data:scaler_x:type:
       type: "categorical"
       settings:
-        name: "preprocessing_inputs"
+        name: "scaler_x"
         choices: ["standard", "normalize", "symmetric", "quantile", "robust"]
-    data:preprocessing:outputs:
+    data:scaler_y:type:
       type: "categorical"
       settings:
-        name: "preprocessing_outputs"
+        name: "scaler_y"
         choices: ["standard", "normalize", "symmetric", "quantile", "robust"]

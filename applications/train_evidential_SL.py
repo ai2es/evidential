@@ -13,6 +13,7 @@ import optuna
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from argparse import ArgumentParser
 
 from tensorflow.keras import backend as K
 from evml.keras.models import EvidentialRegressorDNN
@@ -21,6 +22,7 @@ from evml.splitting import load_splitter
 from evml.metrics import compute_results
 from evml.preprocessing import load_preprocessing
 from evml.keras.seed import seed_everything
+from evml.pbs import launch_pbs_jobs
 
 
 warnings.filterwarnings("ignore")
@@ -128,22 +130,13 @@ def trainer(conf, trial=False):
 
         # load the model
         model = EvidentialRegressorDNN(**model_params)
-        model.build_neural_network(x_train, y_train)
-        
-        # Get callbacks
-        callbacks = get_callbacks(conf, path_extend="")
-
-        # fit model to training data
-        history = model.model.fit(
+        model.fit(
             x_train,
             y_train,
             validation_data=(x_valid, y_valid),
-            batch_size=model.batch_size,
-            callbacks=callbacks,
-            epochs=model.epochs,
-            verbose=model.verbose,
-            shuffle=True,
+            callbacks=get_callbacks(conf, path_extend="")
         )
+        history = model.model.history
 
         # If ECHO is running this script, n_splits has been set to 1, return the metric here
         if trial is not False:
@@ -195,9 +188,25 @@ def trainer(conf, trial=False):
 
 if __name__ == "__main__":
 
-    if len(sys.argv) < 2:
-        print("Usage: python train_SL.py model.yml")
-        sys.exit()
+    description = "Train an evidential model on a surface layer data set"
+    parser = ArgumentParser(description=description)
+    parser.add_argument(
+        "-c",
+        dest="model_config",
+        type=str,
+        default=False,
+        help="Path to the model configuration (yml) containing your inputs.",
+    )
+    parser.add_argument(
+        "-l",
+        dest="launch",
+        type=int,
+        default=0,
+        help="Submit 1 worker to PBS.",
+    )
+    args_dict = vars(parser.parse_args())
+    config = args_dict.pop("model_config")
+    launch = bool(int(args_dict.pop("launch")))
 
     # Set up logger to print stuff
     root = logging.getLogger()
@@ -210,7 +219,6 @@ if __name__ == "__main__":
     ch.setFormatter(formatter)
     root.addHandler(ch)
 
-    config = sys.argv[1]
     with open(config) as cf:
         conf = yaml.load(cf, Loader=yaml.FullLoader)
 
@@ -223,4 +231,11 @@ if __name__ == "__main__":
         with open(os.path.join(save_loc, "model.yml"), "w") as fid:
             yaml.dump(conf, fid)
 
+    if launch:
+        from pathlib import Path
+        script_path = Path(__file__).absolute()
+        logging.info("Launching to PBS")
+        launch_pbs_jobs(config, script_path)
+        sys.exit()
+        
     result = trainer(conf)
