@@ -480,11 +480,46 @@ def regression_attributes(df, output_cols, legend_cols, nbins=11, save_location=
             residuals = df[f"{col}"].values[idx]
             mean = np.mean(residuals)
             std = np.std(residuals)
-            histogram["bin"].append(bin_means[bin_no - 1])
-            histogram["mean"].append(mean)
-            histogram["std"].append(std)
-        axs[k].errorbar(histogram["bin"], histogram["mean"], yerr=histogram["std"])
+            if np.isfinite(mean):
+                histogram["bin"].append(bin_means[bin_no - 1])
+                histogram["mean"].append(mean)
+                histogram["std"].append(std)
+        axs[k].errorbar(
+            histogram["bin"], histogram["mean"], yerr=histogram["std"], c="r", zorder = 2
+        )
+        # axs[k].plot(histogram["bin"], histogram["mean"], c = "r")
         axs[k].plot(histogram["bin"], histogram["bin"], "k--")
+
+        # curve for the no-skill line
+        ave_true = np.mean(histogram["mean"])
+        ave_true_range = np.array([ave_true for x in histogram["mean"]])
+        no_skill = [0.5 * x1 + 0.5 * ave_true for x1 in histogram["bin"]]
+        axs[k].plot(histogram["bin"], no_skill, "b-")
+        axs[k].plot(histogram["bin"], ave_true_range, ls=":", color="lightgrey")
+        axs[k].plot(ave_true_range, histogram["mean"], ls=":", color="lightgrey")
+
+        full_range = np.linspace(min(histogram["bin"]), max(histogram["bin"]), 200)
+        no_skill = [0.5 * x1 + 0.5 * ave_true for x1 in full_range]
+        fill_cond = np.where(full_range < ave_true)[0]
+        axs[k].fill_between(
+            np.array(full_range)[fill_cond],
+            min(
+                min(np.array(histogram["mean"]) - np.array(histogram["std"])),
+                min(np.array(full_range)),
+            ),
+            np.array(no_skill)[fill_cond],
+            color="lightblue",
+        )
+        fill_cond = np.where(full_range > ave_true)[0]
+        axs[k].fill_between(
+            np.array(full_range)[fill_cond],
+            max(
+                max(np.array(histogram["mean"]) + np.array(histogram["std"])),
+                max(np.array(full_range)),
+            ),
+            np.array(no_skill)[fill_cond],
+            color="lightblue",
+        )
 
         axs[k].set_title(f"{legend_cols[k]}")
         axs[k].set_ylabel("Conditional mean observation")
@@ -497,6 +532,7 @@ def regression_attributes(df, output_cols, legend_cols, nbins=11, save_location=
             dpi=300,
             bbox_inches="tight",
         )
+
 
 
 def compute_pit(true_dist, pred_dist):
