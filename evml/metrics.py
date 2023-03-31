@@ -118,7 +118,7 @@ def calibration(
             dataframe[f"{a_col}"] ** 2 + dataframe[f"{e_col}"] ** 2
         )
         df = compute_coverage(dataframe, col="tot_uncertainty", quan=mae_col)
-        ax3.plot(df["tot_uncertainty_cov"], df["cu_{mae_col}"], zorder=2, color=col)
+        ax3.plot(df["tot_uncertainty_cov"], df[f"cu_{mae_col}"], zorder=2, color=col)
 
     ax1.set_xlabel("Confidence percentile (Aleatoric)")
     ax2.set_xlabel("Confidence percentile (Epistemic)")
@@ -177,9 +177,9 @@ def plot_uncertainties(
 
         # Set the axis labels
         axs[i].set_title(legend_cols[i], fontsize=fontsize)
-        axs[i].set_xlabel("Aleatoric", fontsize=fontsize)
+        axs[i].set_xlabel("Epistemic", fontsize=fontsize)
         if i == 0:
-            axs[i].set_ylabel("Epistemic", fontsize=fontsize)
+            axs[i].set_ylabel("Aleatoric", fontsize=fontsize)
         axs[i].tick_params(axis="both", which="major", labelsize=fontsize)
 
         # Move the colorbar below the x-axis label
