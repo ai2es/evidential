@@ -371,7 +371,9 @@ def plot_skill_score(
 
     for j in range(num_outputs):
 
-        for i, std in enumerate([y_ale, y_epi, y_ale + y_epi]):
+        y_tot = np.sqrt(y_ale**2 + y_epi**2)
+        
+        for i, std in enumerate([y_ale, y_epi, y_tot]):
 
             # Compute the skill score
             ss, counts, bins = compute_skill_score(
