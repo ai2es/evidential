@@ -57,9 +57,9 @@ def compute_results(
             output_cols,
             legend_cols=legend_cols,
             num_bins=20,
-            save_location=fn
+            save_location=fn,
         )
-        #spread_skill(df, output_cols, legend_cols, save_location=fn)
+        # spread_skill(df, output_cols, legend_cols, save_location=fn)
     except:
         pass
     # discard fraction
@@ -104,49 +104,36 @@ def calibration(
     colors = ["r", "g", "b"]
     lcolors = ["pink", "lightgreen", "lightblue"]
 
-    for a_col, e_col, mae_col, col, lcol in zip(a_cols, e_cols, mae_cols, colors, lcolors):
+    for a_col, e_col, mae_col, col, lcol in zip(
+        a_cols, e_cols, mae_cols, colors, lcolors
+    ):
         #  Coverage (sorted uncertainty) versus cumulative metric
         df = compute_coverage(dataframe, col=a_col, quan=mae_col)
         ax1.plot(df[f"{a_col}_cov"], df[f"cu_{mae_col}"], zorder=2, color=col)
-        
+
         df = compute_coverage(dataframe, col=e_col, quan=mae_col)
         ax2.plot(df[f"{e_col}_cov"], df[f"cu_{mae_col}"], zorder=2, color=col)
-        
-        dataframe["tot_uncertainty"] = dataframe[f"{a_col}"] + dataframe[f"{e_col}"]
+
+        dataframe["tot_uncertainty"] = np.sqrt(
+            dataframe[f"{a_col}"] ** 2 + dataframe[f"{e_col}"] ** 2
+        )
         df = compute_coverage(dataframe, col="tot_uncertainty", quan=mae_col)
-        ax3.plot(df[f"tot_uncertainty_cov"], df[f"cu_{mae_col}"], zorder=2, color=col)
-
-#         cov_var, cov_mae, cov_mae_std, cov_var_std = calibration_curve(
-#             df, col=e_col, quan=mae_col, bins=bins
-#         )
-
-#         ax2.plot(cov_var, cov_mae, f"{col}-o")
-#         ax2.errorbar(
-#             cov_var,
-#             cov_mae,
-#             xerr=cov_var_std,
-#             yerr=cov_mae_std,
-#             capsize=0,
-#             c=col,
-#             elinewidth=3,
-#             ecolor=lcol,
-#         )
+        ax3.plot(df["tot_uncertainty_cov"], df["cu_{mae_col}"], zorder=2, color=col)
 
     ax1.set_xlabel("Confidence percentile (Aleatoric)")
     ax2.set_xlabel("Confidence percentile (Epistemic)")
     ax3.set_xlabel("Confidence percentile (Total)")
     ax1.set_ylabel("MAE")
-    
 
     ax1.legend(legend_cols)
     ax2.legend(legend_cols)
     ax3.legend(legend_cols)
-    #ax2.plot(cov_var, cov_var, "k--")
+
     plt.tight_layout()
 
     if save_location:
         plt.savefig(
-            os.path.join(save_location, f"{name}_coverage_calibration.pdf"),
+            os.path.join(save_location, f"mae_versus_coverage.pdf"),
             dpi=300,
             bbox_inches="tight",
         )
@@ -335,7 +322,14 @@ def compute_skill_score(y_true, y_pred, y_std, num_bins=10):
 
 
 def plot_skill_score(
-    y_true, y_pred, y_ale, y_epi, output_cols, num_bins=50, legend_cols=None, save_location=False
+    y_true,
+    y_pred,
+    y_ale,
+    y_epi,
+    output_cols,
+    num_bins=50,
+    legend_cols=None,
+    save_location=False,
 ):
     """
     Plots the skill score with RMSE on the y-axis and binned spread on the x-axis.
@@ -372,7 +366,7 @@ def plot_skill_score(
     for j in range(num_outputs):
 
         y_tot = np.sqrt(y_ale**2 + y_epi**2)
-        
+
         for i, std in enumerate([y_ale, y_epi, y_tot]):
 
             # Compute the skill score
@@ -426,7 +420,6 @@ def plot_skill_score(
             dpi=300,
             bbox_inches="tight",
         )
-
 
 
 def discard_fraction(df, output_cols, legend_cols, save_location=False):
@@ -547,7 +540,7 @@ def pit_histogram(
 
     if legend_cols is None:
         legend_cols = output_cols
-        
+
     true_dist = df[output_cols].values
 
     for k in range(true_dist.shape[-1]):
