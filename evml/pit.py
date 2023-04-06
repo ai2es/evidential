@@ -57,12 +57,14 @@ def probability_integral_transform_ensemble(y_true, y_pred_ens):
     Returns: 
         pit_quantiles: for each sample, the true value's quantile in the predicted distribution.
     """
-    pit_quantiles = percentileofscore(y_pred_ens, y_true, axis=1) / 100.0
+    pit_quantiles = np.zeros(y_true.shape)
+    for i in range(y_true.shape[0]):
+        pit_quantiles[i] = percentileofscore(y_pred_ens[i], y_true[i]) / 100.0
     return pit_quantiles
 
 
 def probability_integral_transform_gaussian(y_true, y_pred_gaussian):
-     """
+    """
     Calculate the probability integral transform quantiles for a single Gaussian distribution.
 
     Args:
@@ -72,9 +74,8 @@ def probability_integral_transform_gaussian(y_true, y_pred_gaussian):
     Returns: 
         pit_quantiles: for each sample, the true value's quantile in the predicted distribution.
     """
-
     pit_quantiles = np.zeros(y_true.shape)
-    for i in range(y_true.shape):
+    for i in range(y_true.shape[0]):
         pit_quantiles[i] = norm.cdf(y_true[i], y_pred_gaussian[i, 0], y_pred_gaussian[i, 1])
     return pit_quantiles
 

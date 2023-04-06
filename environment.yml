@@ -26,6 +26,4 @@ dependencies:
   - pip:
     - pyarrow
     - fastparquet
-    - hagelslag
-    - imblearn
     - .
