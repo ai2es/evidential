@@ -45,6 +45,23 @@ def pit_deviation(y_true, y_pred, pred_type="ensemble", bins=10):
     pit_deviation = np.sqrt(1 / n_bins * np.sum((pit_hist / n_samples - 1 / n_bins) ** 2))
     return pit_deviation
 
+def pit_deviation_worst(n_bins):
+    """
+    Calculate the worst possible PITD score based on the number of bins. Assumes all the forecasts 
+    end up in one of the outermost bins.
+    """
+    return np.sqrt(1 / n_bins * ((n_bins - 1) * (1 / n_bins) ** 2 + (1 - 1 / n_bins) ** 2))
+
+
+def pit_deviation_skill_score(y_true, y_pred, pred_type="ensemble", bins=10):
+    """
+    Calculate PITD score relative to the worst possible PITD for a given number of bins.
+    Ranges from 0 to 1.
+    """
+    pitd_score = pit_deviation(y_true, y_pred, pred_type=pred_type, bins=bins)
+    pitd_worst = pit_deviation_worst(bins)
+    return 1 - pitd_score / pitd_worst
+
 
 def probability_integral_transform_ensemble(y_true, y_pred_ens):
     """
