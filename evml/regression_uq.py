@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from collections import defaultdict
 import os
+from sklearn.metrics import brier_score_loss
+from evml.pit import pit_histogram
 
 
 def compute_results(
@@ -14,67 +16,60 @@ def compute_results(
     legend_cols=["Friction_velocity", "Sensible_heat", "Latent_heat"],
     fn=None,
 ):
+    # Set up some column names
     mu_cols = [f"{x}_pred" for x in output_cols]
     err_cols = [f"{x}_err" for x in output_cols]
     e_cols = [f"{x}_e" for x in output_cols]
     a_cols = [f"{x}_a" for x in output_cols]
+    t_cols = [f"{x}_t" for x in output_cols]
+
     # Add the predictions to the dataframe and compute absolute error
     df[mu_cols] = mu
-    df[a_cols] = aleatoric
-    df[e_cols] = epistemic
+    df[a_cols] = np.sqrt(aleatoric)
+    df[e_cols] = np.sqrt(epistemic)
+    df[t_cols] = np.sqrt(aleatoric + epistemic)
     df[err_cols] = np.abs(mu - df[output_cols])
 
     # Make 2D histogram of the predicted aleatoric and epistemic uncertainties
-    try:
-        plot_uncertainties(
-            aleatoric, epistemic, output_cols, legend_cols=legend_cols, save_location=fn
-        )
-    except:
-        pass
-    # Compute attributes figure
-    try:
-        regression_attributes(df, output_cols, legend_cols, save_location=fn)
-    except:
-        pass
-    # Compute calibration curve and MAE versus sorted epistemic uncertainty
-    try:
-        calibration(df, a_cols, e_cols, err_cols, legend_cols, save_location=fn)
-    except Exception as E:
-        print(E)
-        pass
-    # Compute calibration curve and MAE versus sorted aleatoric uncertainty
-    # try:
-    #     calibration(df, a_cols, err_cols, legend_cols, "Aleatoric", save_location=fn)
-    # except:
-    #     pass
-    # spread-skill
-    try:
-        plot_skill_score(
-            df[output_cols].values,
-            mu,
-            aleatoric,
-            epistemic,
-            output_cols,
-            legend_cols=legend_cols,
-            num_bins=20,
-            save_location=fn,
-        )
-        # spread_skill(df, output_cols, legend_cols, save_location=fn)
-    except:
-        pass
-    # discard fraction
-    try:
-        discard_fraction(df, output_cols, legend_cols, save_location=fn)
-    except:
-        pass
-    # Compute PIT histogram
-    try:
-        pit_histogram(
-            df, mu, output_cols, num_bins=10, legend_cols=legend_cols, save_location=fn
-        )
-    except:
-        pass
+    plot_uncertainties(
+        np.sqrt(aleatoric),
+        np.sqrt(epistemic),
+        output_cols,
+        legend_cols=legend_cols,
+        save_location=fn,
+    )
 
+    # Compute attributes figure
+    regression_attributes(df, output_cols, legend_cols, save_location=fn)
+
+    # Compute calibration curve and MAE versus sorted epistemic uncertainty
+    calibration(df, a_cols, e_cols, err_cols, legend_cols, save_location=fn)
+
+    # spread-skill
+    plot_skill_score(
+        df[output_cols].values,
+        mu,
+        np.sqrt(aleatoric),
+        np.sqrt(epistemic),
+        output_cols,
+        legend_cols=legend_cols,
+        num_bins=20,
+        save_location=fn,
+    )
+
+    # discard fraction
+    discard_fraction(df, output_cols, legend_cols, save_location=fn)
+
+    # Compute PIT histogram
+    pit_figure(
+        df,
+        output_cols,
+        mu,
+        aleatoric,
+        epistemic,
+        legend_cols=legend_cols,
+        save_location=fn,
+    )
 
 def compute_coverage(df, col="var", quan="error"):
     df = df.copy()
@@ -133,7 +128,7 @@ def calibration(
 
     if save_location:
         plt.savefig(
-            os.path.join(save_location, f"mae_versus_coverage.pdf"),
+            os.path.join(save_location, "mae_versus_coverage.pdf"),
             dpi=300,
             bbox_inches="tight",
         )
@@ -403,7 +398,7 @@ def plot_skill_score(
             minx = min(min(x_centers), min(y_centers))
             maxx = max(max(x_centers), max(y_centers))
             ranger = np.linspace(minx, maxx, 10)
-            axs[j][i].plot(ranger, ranger, c="b", ls="--", lw=3, zorder=10)
+            axs[j][i].plot(ranger, ranger, c="#FFFFFF", ls="--", lw=3, zorder=10)
             axs[j][i].set_xlim([my_range[0][0], my_range[0][1]])
             axs[j][i].set_ylim([my_range[1][0], my_range[1][1]])
 
@@ -428,9 +423,13 @@ def discard_fraction(df, output_cols, legend_cols, save_location=False):
     fig, axs = plt.subplots(1, len(output_cols), figsize=(width, height))
     if len(output_cols) == 1:
         axs = [axs]
+    colors = ["#f8d605", "#ce4912", "#042c71"]
+
     for col in output_cols:
         df = compute_coverage(df, col=f"{col}_e", quan=f"{col}_err")
         df = compute_coverage(df, col=f"{col}_a", quan=f"{col}_err")
+        # df[f"{col}_t"] = np.sqrt(df[f"{col}_a"] + df[f"{col}_e"])
+        df = compute_coverage(df, col=f"{col}_t", quan=f"{col}_err")
     for k, col in enumerate(output_cols):
         results = defaultdict(list)
         for percent in range(5, 105, 5):
@@ -438,15 +437,25 @@ def discard_fraction(df, output_cols, legend_cols, save_location=False):
             results["rmse_e"].append(np.square(df[c][f"{col}_err"]).mean() ** (1 / 2))
             c = df[f"{col}_a_cov"] >= percent / 100.0
             results["rmse_a"].append(np.square(df[c][f"{col}_err"]).mean() ** (1 / 2))
+            c = df[f"{col}_t_cov"] >= percent / 100.0
+            results["rmse_t"].append(np.square(df[c][f"{col}_err"]).mean() ** (1 / 2))
             results["frac"].append(percent)
 
-        axs[k].bar(results["frac"], results["rmse_e"], 2.5)
-        axs[k].bar([x + 2.5 for x in results["frac"]], results["rmse_a"], 2.5)
+        db = (1.0 / 3.0) * 5
+        axs[k].bar(results["frac"], results["rmse_e"], db, color=colors[0])
+        axs[k].bar(
+            [x + db for x in results["frac"]], results["rmse_a"], db, color=colors[1]
+        )
+        axs[k].bar(
+            [x + 2 * db for x in results["frac"]],
+            results["rmse_t"],
+            db,
+            color=colors[2],
+        )
         axs[k].set_xlabel("Fraction removed")
         axs[k].set_title(legend_cols[k])
+        axs[k].legend(["Epistemic", "Aleatoric", "Total"], loc="best")
 
-        if k == 1:
-            axs[k].legend(["Epistemic", "Aleatoric"])
     axs[0].set_ylabel("RMSE")
     plt.tight_layout()
 
@@ -485,7 +494,7 @@ def regression_attributes(df, output_cols, legend_cols, nbins=11, save_location=
                 histogram["mean"].append(mean)
                 histogram["std"].append(std)
         axs[k].errorbar(
-            histogram["bin"], histogram["mean"], yerr=histogram["std"], c="r", zorder = 2
+            histogram["bin"], histogram["mean"], yerr=histogram["std"], c="r", zorder=2
         )
         # axs[k].plot(histogram["bin"], histogram["mean"], c = "r")
         axs[k].plot(histogram["bin"], histogram["bin"], "k--")
@@ -534,88 +543,79 @@ def regression_attributes(df, output_cols, legend_cols, nbins=11, save_location=
         )
 
 
-
-def compute_pit(true_dist, pred_dist):
-    """
-    Computes the probability integral transform (PIT) between a true distribution
-    and a predicted distribution.
-
-    Parameters
-    ----------
-    true_dist : array-like
-        A 1D array of values representing the true distribution.
-    pred_dist : array-like
-        A 1D array of values representing the predicted distribution.
-
-    Returns
-    -------
-    pit : array-like
-        A 1D array of PIT values.
-    """
-    # Sort the true and predicted distributions
-    true_sorted = np.sort(true_dist)
-    pred_sorted = np.sort(pred_dist)
-
-    # Compute the PIT values
-    pit = np.zeros_like(pred_sorted)
-    for i, x in enumerate(pred_sorted):
-        j = np.searchsorted(true_sorted, x, side="right")
-        pit[i] = j / len(true_sorted)
-
-    return pit
-
-
-def pit_histogram(
-    df, pred_dist, output_cols, num_bins=50, legend_cols=None, save_location=None
+def pit_figure(
+    df,
+    output_cols,
+    mu,
+    aleatoric,
+    epistemic,
+    titles=["Aleatoric", "Epistemic", "Total"],
+    legend_cols=["Friction velocity", "Sensible heat", "Latent heat"],
+    save_location=None,
+    pit_type="gaussian"
 ):
-    width = 5 if len(output_cols) == 1 else 10
-    height = 3.5 if len(output_cols) == 1 else 3.5
-    fig, axs = plt.subplots(1, len(output_cols), figsize=(width, height))
-    if len(output_cols) == 1:
-        axs = [axs]
 
-    if legend_cols is None:
-        legend_cols = output_cols
+    # Create the figure and subplot
+    fig, axs = plt.subplots(1, 3, figsize=(10, 3.5), sharey="col")
 
-    true_dist = df[output_cols].values
+    # add up uncertainties
+    total = aleatoric + epistemic
 
-    for k in range(true_dist.shape[-1]):
-        td = true_dist[:, k]
-        pd = pred_dist[:, k]
+    for j, uq in enumerate([aleatoric, epistemic, total]):
 
-        # Compute the PIT values
-        pit = compute_pit(td, pd)
+        # Loop over the output columns and plot the histograms
+        for i, col in enumerate(output_cols):
+#             pit_quantiles = probability_integral_transform_gaussian(
+#                 df[col].values, np.stack([mu[:, i], np.sqrt(uq[:, i])], -1)
+#             )
 
-        # Plot the histogram of PIT values
-        bin_lims = np.percentile(pit, [0, 100])
-        bins = np.linspace(bin_lims[0], bin_lims[1], num_bins + 1)
-        hist, _ = np.histogram(pit, bins=bins, density=True)
-        hist /= sum(hist)
+#             # Create the histogram
+#             bin_counts, bin_edges = np.histogram(
+#                 pit_quantiles, bins=np.linspace(0, 1, 10), density=True
+#             )
+            bin_counts, bin_edges = pit_histogram(
+                df[col].values,
+                np.stack([mu[:, i], np.sqrt(uq[:, i])], -1),
+                pred_type=pit_type,
+                bins=np.linspace(0, 1, 10)
+            )
+            bin_width = bin_edges[1] - bin_edges[0]
 
-        axs[k].bar(
-            bins[:-1],
-            hist,
-            width=1.0 / (num_bins + 1),
-            align="edge",
-            color="tab:blue",
-            edgecolor="lightblue",
-        )
-        axs[k].set_xlim(bin_lims[0], bin_lims[1])
-        axs[k].set_ylim(0, 1.1 * np.max(hist))
+            # Normalize the bin heights
+            bin_heights = bin_counts / bin_width
+            bin_heights /= sum(bin_heights)
 
-        axs[k].set_xlabel("PIT", fontsize=12)
-        axs[k].set_ylabel("Probability", fontsize=12)
-        axs[k].set_title(legend_cols[k])
+            # Plot the histogram
+            axs[j].bar(
+                bin_edges[:-1] + i * (bin_width / len(output_cols)),
+                bin_heights,
+                width=bin_width / len(output_cols),
+                align="edge",
+                edgecolor="black",
+                linewidth=1.2,
+                alpha=0.7,
+                label="{}".format(col),
+            )
 
-        # add baseline line ~ number of bins
-        axs[k].plot(
-            np.linspace(0, 1, num_bins),
-            [1.0 / num_bins for x in range(num_bins)],
-            color="k",
-            ls="--",
-        )
+        # Add axis labels and title
+        axs[j].set_xlabel("PIT Quantiles", fontsize=10)
+        # axs[j].set_ylabel('Normalized Bin Height', fontsize=14)
+
+        # Add a grid
+        axs[j].grid(axis="y", linestyle="--", alpha=0.7)
+
+        # Increase the font size of the tick labels
+        axs[j].tick_params(axis="both", which="major", labelsize=10)
+
+        # Add a legend
+        axs[j].legend(legend_cols, fontsize=8, loc="best")
+
+        # Set the titles
+        axs[j].set_title(titles[j], fontsize=10)
 
     plt.tight_layout()
+
+    # Save
     if save_location:
         plt.savefig(
             os.path.join(save_location, "pit_histogram.pdf"),

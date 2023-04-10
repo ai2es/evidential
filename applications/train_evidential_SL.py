@@ -19,7 +19,7 @@ from tensorflow.keras import backend as K
 from evml.keras.models import EvidentialRegressorDNN
 from evml.keras.callbacks import get_callbacks
 from evml.splitting import load_splitter
-from evml.metrics import compute_results
+from evml.regression_uq import compute_results
 from evml.preprocessing import load_preprocessing
 from evml.keras.seed import seed_everything
 from evml.pbs import launch_pbs_jobs
@@ -175,14 +175,14 @@ def trainer(conf, trial=False):
     _test_data.to_csv(os.path.join(save_loc, "test.csv"))
 
     # make some figures
-    os.makedirs(os.path.join(save_loc, "evidential"), exist_ok=True)
+    os.makedirs(os.path.join(save_loc, "metrics"), exist_ok=True)
     compute_results(
         _test_data,
         output_cols,
         mu,
         aleatoric,
         epistemic,
-        fn=os.path.join(save_loc, "evidential"),
+        fn=os.path.join(save_loc, "metrics"),
     )
 
 

@@ -17,12 +17,15 @@ logger = logging.getLogger(__name__)
 
 
 def get_callbacks(
-    config: Dict[str, str], path_extend="probability_model"
+    config: Dict[str, str], path_extend=False
 ) -> List[Callback]:
     callbacks = []
 
     if "callbacks" in config:
-        save_data = os.path.join(config["save_loc"], path_extend)
+        if path_extend:
+            save_data = os.path.join(config["save_loc"], path_extend)
+        else:
+            save_data = config["save_loc"]
         config = config["callbacks"]
     else:
         return []
@@ -78,7 +81,7 @@ class ReportEpoch(tf.keras.callbacks.Callback):
         self.this_epoch = 0
         self.annealing_coef = annealing_coef
 
-    def on_epoch_begin(self, logs=None):
+    def on_epoch_begin(self, epoch, logs=None):
         if logs is None:
             logs = {}
         self.this_epoch += 1

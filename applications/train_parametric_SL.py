@@ -20,7 +20,7 @@ from evml.keras.models import ParametricRegressorDNN
 from evml.keras.callbacks import get_callbacks
 from evml.splitting import load_splitter
 from evml.keras.monte_carlo import monte_carlo_ensemble
-from evml.metrics import compute_results
+from evml.regression_uq import compute_results
 from evml.preprocessing import load_preprocessing
 from evml.keras.seed import seed_everything
 from evml.pbs import launch_pbs_jobs
@@ -75,6 +75,13 @@ def trainer(conf, trial=False):
     n_splits = data_params["n_splits"]
     input_cols = data_params["input_cols"]
     output_cols = data_params["output_cols"]
+    
+    # Make some directories
+    for super_dir in ["ensemble", "monte_carlo"]: # seed
+        os.makedirs(os.path.join(save_loc, super_dir), exist_ok=True)
+        os.makedirs(os.path.join(save_loc, f"{super_dir}/models"), exist_ok=True)
+        os.makedirs(os.path.join(save_loc, f"{super_dir}/metrics"), exist_ok=True)
+        os.makedirs(os.path.join(save_loc, f"{super_dir}/evaluate"), exist_ok=True)
 
     # Need the same test_data for all trained models (data and model ensembles)
     gsp = load_splitter(
@@ -98,6 +105,7 @@ def trainer(conf, trial=False):
     ensemble_var = np.zeros((n_splits, _test_data.shape[0], len(output_cols)))
 
     best_model = None
+    best_data_split = None
     best_model_score = 1e10
     for data_seed in tqdm.tqdm(range(n_splits)):
         # select indices from the split, data splits
@@ -147,6 +155,7 @@ def trainer(conf, trial=False):
         # Save if its the best model
         if min(history.history[training_metric]) < best_model_score:
             best_model = model
+            best_data_split = data_seed
             model.model_name = "best.h5"
             model.save_model()
 
@@ -158,27 +167,35 @@ def trainer(conf, trial=False):
             aleatoric = np.expand_dims(aleatoric, 1)
         ensemble_mu[data_seed] = mu
         ensemble_var[data_seed] = aleatoric
+        
+        # Save the ensemble member df
+        _test_data[[f"{x}_pred" for x in output_cols]] = mu
+        _test_data[[f"{x}_ale" for x in output_cols]] = aleatoric
+        _test_data.to_csv(os.path.join(save_loc, "ensemble/evaluate", f"test_{data_seed}.csv"))
 
         # check if this is the best model
         del model
         tf.keras.backend.clear_session()
         gc.collect()
 
-    # Compute uncertainties
+    # Compute uncertainties for the data sensemble
     ensemble_epistemic = np.var(ensemble_mu, axis=0)
     ensemble_aleatoric = np.mean(ensemble_var, axis=0)
     ensemble_mean = np.mean(ensemble_mu, axis=0)
 
     # Compute epistemic uncertainty via MC-dropout
-    mc_mu, mc_aleatoric = monte_carlo_ensemble(
+    mc_mu, mc_aleatoric, mc_epistemic = monte_carlo_ensemble(
         best_model, x_test, y_test, forward_passes=monte_carlo_passes, y_scaler=y_scaler
     )
-    mc_epistemic = np.var(mc_mu)
-    mc_aleatoric = np.mean(mc_aleatoric)
+    # Save the MC dataframes
+    ### TO DO 
+    
+    # Now use the same data splits as in MC, but create ensemble by varying model seed
+    ### TO DO 
 
     # add to df and save
     _test_data[[f"{x}_ensemble_pred" for x in output_cols]] = ensemble_mean
-    _test_data[[f"{x}_mc_pred" for x in output_cols]] = mc_mu[:, :, 0]
+    _test_data[[f"{x}_mc_pred" for x in output_cols]] = mc_mu
     _test_data[[f"{x}_ensemble_ale" for x in output_cols]] = ensemble_aleatoric
     _test_data[[f"{x}_mc_ale" for x in output_cols]] = mc_aleatoric
     _test_data[[f"{x}_ensemble_epi" for x in output_cols]] = ensemble_epistemic
@@ -186,23 +203,21 @@ def trainer(conf, trial=False):
     _test_data.to_csv(os.path.join(save_loc, "test.csv"))
 
     # make some figures
-    os.makedirs(os.path.join(save_loc, "ensemble"), exist_ok=True)
     compute_results(
         _test_data,
         output_cols,
         ensemble_mean,
         ensemble_aleatoric,
         ensemble_epistemic,
-        fn=os.path.join(save_loc, "ensemble"),
+        fn=os.path.join(save_loc, "ensemble/metrics"),
     )
-    os.makedirs(os.path.join(save_loc, "monte_carlo"), exist_ok=True)
     compute_results(
         _test_data,
         output_cols,
-        mc_mu[:, :, 0],
+        mc_mu,
         mc_aleatoric,
         mc_epistemic,
-        fn=os.path.join(save_loc, "monte_carlo"),
+        fn=os.path.join(save_loc, "monte_carlo/metrics"),
     )
 
 
