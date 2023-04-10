@@ -232,15 +232,15 @@ class EvidentialRegressorDNN(object):
             epistemic[:, i] *= self.training_var[i]
 
         return mu, aleatoric, epistemic
-    
-    def predict_dist_params(self, x):
+
+    def predict_dist_params(self, x, y_scaler=False):
         preds = self.model.predict(x, batch_size=self.batch_size)
         mu, v, alpha, beta = np.split(preds, 4, axis=-1)
         if mu.shape[-1] == 1:
             mu = np.expand_dims(mu, 1)
         if y_scaler:
             mu = y_scaler.inverse_transform(mu)
-            
+
         return mu, v, alpha, beta
 
 
@@ -315,7 +315,7 @@ class ParametricRegressorDNN(EvidentialRegressorDNN):
         mu, aleatoric = tf.split(y_pred, 2, axis=-1)
         return tf.keras.metrics.mean_squared_error(y_true, mu)
 
-    def calc_uncertainties(self, preds, y_scaler):
+    def calc_uncertainties(self, preds, y_scaler=False):
         mu, aleatoric = np.split(preds, 2, axis=-1)
         if mu.shape[-1] == 1:
             mu = np.expand_dims(mu)
@@ -473,12 +473,10 @@ class CategoricalDNN(object):
                 learning_rate=self.lr,
                 beta_1=self.adam_beta_1,
                 beta_2=self.adam_beta_2,
-                epsilon=self.epsilon
+                epsilon=self.epsilon,
             )
         elif self.optimizer == "sgd":
-            self.optimizer_obj = SGD(
-                learning_rate=self.lr, momentum=self.sgd_momentum
-            )
+            self.optimizer_obj = SGD(learning_rate=self.lr, momentum=self.sgd_momentum)
 
         self.model.build((self.batch_size, inputs))
         self.model.compile(optimizer=self.optimizer_obj, loss=self.loss)
@@ -535,7 +533,7 @@ class CategoricalDNN(object):
                 callbacks=self.callbacks,
                 sample_weight=sample_weight,
                 steps_per_epoch=self.steps_per_epoch,
-                #class_weight={k: v for k, v in enumerate(self.loss_weights)},
+                # class_weight={k: v for k, v in enumerate(self.loss_weights)},
                 shuffle=True,
             )
         return history
@@ -572,13 +570,12 @@ class CategoricalDNN(object):
     def predict_proba(self, x):
         y_prob = self.model.predict(x, batch_size=self.batch_size, verbose=self.verbose)
         return y_prob
-    
-    def compute_uncertainties(self, y_pred, num_classes = 4):
-        return calc_prob_uncertainty(y_pred, num_classes = num_classes)
-    
-    
-    
-def calc_prob_uncertainty(y_pred, num_classes = 4):
+
+    def compute_uncertainties(self, y_pred, num_classes=4):
+        return calc_prob_uncertainty(y_pred, num_classes=num_classes)
+
+
+def calc_prob_uncertainty(y_pred, num_classes=4):
     evidence = tf.nn.relu(y_pred)
     alpha = evidence + 1
     S = tf.keras.backend.sum(alpha, axis=1, keepdims=True)
