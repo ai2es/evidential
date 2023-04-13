@@ -13,6 +13,8 @@ def compute_results(
     mu,
     aleatoric,
     epistemic,
+    ensemble_mu=False,
+    ensemble_type=False,
     legend_cols=["Friction_velocity", "Sensible_heat", "Latent_heat"],
     fn=None,
 ):
@@ -60,8 +62,8 @@ def compute_results(
     # discard fraction
     discard_fraction(df, output_cols, legend_cols, save_location=fn)
 
-    # Compute PIT histogram
-    pit_figure(
+    # Compute gaussian PIT histogram
+    pit_figure_gaussian(
         df,
         output_cols,
         mu,
@@ -70,6 +72,18 @@ def compute_results(
         legend_cols=legend_cols,
         save_location=fn,
     )
+
+    if ensemble_type:
+        # Compute ensemble PIT histogram
+        pit_figure_ensemble(
+            df,
+            output_cols,
+            ensemble_mu,
+            legend_cols=legend_cols,
+            title=ensemble_type,
+            save_location=fn,
+        )
+
 
 def compute_coverage(df, col="var", quan="error"):
     df = df.copy()
@@ -543,7 +557,7 @@ def regression_attributes(df, output_cols, legend_cols, nbins=11, save_location=
         )
 
 
-def pit_figure(
+def pit_figure_gaussian(
     df,
     output_cols,
     mu,
@@ -552,7 +566,6 @@ def pit_figure(
     titles=["Aleatoric", "Epistemic", "Total"],
     legend_cols=["Friction velocity", "Sensible heat", "Latent heat"],
     save_location=None,
-    pit_type="gaussian"
 ):
 
     # Create the figure and subplot
@@ -565,19 +578,12 @@ def pit_figure(
 
         # Loop over the output columns and plot the histograms
         for i, col in enumerate(output_cols):
-#             pit_quantiles = probability_integral_transform_gaussian(
-#                 df[col].values, np.stack([mu[:, i], np.sqrt(uq[:, i])], -1)
-#             )
 
-#             # Create the histogram
-#             bin_counts, bin_edges = np.histogram(
-#                 pit_quantiles, bins=np.linspace(0, 1, 10), density=True
-#             )
             bin_counts, bin_edges = pit_histogram(
                 df[col].values,
                 np.stack([mu[:, i], np.sqrt(uq[:, i])], -1),
-                pred_type=pit_type,
-                bins=np.linspace(0, 1, 10)
+                pred_type="gaussian",
+                bins=np.linspace(0, 1, 10),
             )
             bin_width = bin_edges[1] - bin_edges[0]
 
@@ -618,7 +624,71 @@ def pit_figure(
     # Save
     if save_location:
         plt.savefig(
-            os.path.join(save_location, "pit_histogram.pdf"),
+            os.path.join(save_location, "pit_histogram_gaussian.pdf"),
+            dpi=300,
+            bbox_inches="tight",
+        )
+
+
+def pit_figure_ensemble(
+    df,
+    output_cols,
+    mu,
+    legend_cols=["Friction velocity", "Sensible heat", "Latent heat"],
+    title="Ensemble",
+    save_location=None,
+):
+
+    # Create the figure and subplot
+    fig, axs = plt.subplots(1, 1, figsize=(5, 3.5), sharey="col")
+
+    mu = np.transpose(mu, (2, 1, 0))
+
+    # Loop over the output columns and plot the histograms
+    for i, col in enumerate(output_cols):
+
+        bin_counts, bin_edges = pit_histogram(
+            df[col].values, mu[i], pred_type="ensemble", bins=np.linspace(0, 1, 10)
+        )
+        bin_width = bin_edges[1] - bin_edges[0]
+
+        # Normalize the bin heights
+        bin_heights = bin_counts / bin_width
+        bin_heights /= sum(bin_heights)
+
+        # Plot the histogram
+        axs.bar(
+            bin_edges[:-1] + i * (bin_width / len(output_cols)),
+            bin_heights,
+            width=bin_width / len(output_cols),
+            align="edge",
+            edgecolor="black",
+            linewidth=1.2,
+            alpha=0.7,
+            label="{}".format(col),
+        )
+
+    # Add axis labels and title
+    axs.set_xlabel("PIT Quantiles", fontsize=10)
+
+    # Add a grid
+    axs.grid(axis="y", linestyle="--", alpha=0.7)
+
+    # Increase the font size of the tick labels
+    axs.tick_params(axis="both", which="major", labelsize=10)
+
+    # Add a legend
+    axs.legend(legend_cols, fontsize=8, loc="best")
+
+    # Set the titles
+    axs.set_title(title, fontsize=10)
+
+    plt.tight_layout()
+
+    # Save
+    if save_location:
+        plt.savefig(
+            os.path.join(save_location, "pit_histogram_ensemble.pdf"),
             dpi=300,
             bbox_inches="tight",
         )

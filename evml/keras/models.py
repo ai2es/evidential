@@ -14,6 +14,200 @@ from imblearn.under_sampling import RandomUnderSampler
 from imblearn.tensorflow import balanced_batch_generator
 
 
+class RegressorDNN(object):
+    """
+    A Dense Neural Network Model that can support arbitrary numbers of hidden layers.
+    Attributes:
+        hidden_layers: Number of hidden layers
+        hidden_neurons: Number of neurons in each hidden layer
+        activation: Type of activation function
+        evidential_coef: Evidential regularization coefficient
+        optimizer: Name of optimizer or optimizer object.
+        loss: Name of loss function or loss object
+        use_noise: Whether additive Gaussian noise layers are included in the network
+        noise_sd: The standard deviation of the Gaussian noise layers
+        use_dropout: Whether Dropout layers are added to the network
+        dropout_alpha: proportion of neurons randomly set to 0.
+        batch_size: Number of examples per batch
+        epochs: Number of epochs to train
+        verbose: Level of detail to provide during training
+        model: Keras Model object
+    """
+
+    def __init__(
+        self,
+        hidden_layers=1,
+        hidden_neurons=4,
+        activation="relu",
+        optimizer="adam",
+        loss="mse",
+        loss_weights=None,
+        use_noise=False,
+        noise_sd=0.01,
+        lr=0.001,
+        use_dropout=False,
+        dropout_alpha=0.1,
+        batch_size=128,
+        epochs=2,
+        kernel_reg="l2",
+        l1_weight=0.01,
+        l2_weight=0.01,
+        sgd_momentum=0.9,
+        adam_beta_1=0.9,
+        adam_beta_2=0.999,
+        verbose=0,
+        save_path=".",
+        model_name="model.h5",
+        metrics=None,
+    ):
+
+        self.hidden_layers = hidden_layers
+        self.hidden_neurons = hidden_neurons
+        self.activation = activation
+        self.optimizer = optimizer
+        self.optimizer_obj = None
+        self.sgd_momentum = sgd_momentum
+        self.adam_beta_1 = adam_beta_1
+        self.adam_beta_2 = adam_beta_2
+        self.loss = loss
+        self.loss_weights = loss_weights
+        self.lr = lr
+        self.kernel_reg = kernel_reg
+        self.l1_weight = l1_weight
+        self.l2_weight = l2_weight
+        self.batch_size = batch_size
+        self.use_noise = use_noise
+        self.noise_sd = noise_sd
+        self.use_dropout = use_dropout
+        self.dropout_alpha = dropout_alpha
+        self.epochs = epochs
+        self.verbose = verbose
+        self.save_path = save_path
+        self.model_name = model_name
+        self.model = None
+        self.optimizer_obj = None
+        self.training_std = None
+        self.training_var = None
+        self.metrics = metrics
+
+    def build_neural_network(self, inputs, outputs):
+        """
+        Create Keras neural network model and compile it.
+        Args:
+            inputs (int): Number of input predictor variables
+            outputs (int): Number of output predictor variables
+        """
+
+        nn_input = Input(shape=(inputs.shape[1],), name="input")
+        nn_model = nn_input
+
+        if self.activation == "leaky":
+            self.activation = LeakyReLU()
+
+        if self.kernel_reg == "l1":
+            self.kernel_reg = L1(self.l1_weight)
+        elif self.kernel_reg == "l2":
+            self.kernel_reg = L2(self.l2_weight)
+        elif self.kernel_reg == "l1_l2":
+            self.kernel_reg = L1L2(self.l1_weight, self.l2_weight)
+        else:
+            self.kernel_reg = None
+
+        for h in range(self.hidden_layers):
+            nn_model = Dense(
+                self.hidden_neurons,
+                activation=self.activation,
+                kernel_regularizer=L2(self.l2_weight),
+                name=f"dense_{h:02d}",
+            )(nn_model)
+            if self.use_dropout:
+                nn_model = Dropout(self.dropout_alpha, name=f"dropout_h_{h:02d}")(
+                    nn_model
+                )
+            if self.use_noise:
+                nn_model = GaussianNoise(self.noise_sd, name=f"ganoise_h_{h:02d}")(
+                    nn_model
+                )
+        nn_model = Dense(outputs.shape[-1], name="dense_last")(
+            nn_model
+        )
+        self.model = Model(nn_input, nn_model)
+        if self.optimizer == "adam":
+            self.optimizer_obj = Adam(
+                learning_rate=self.lr
+            )
+        elif self.optimizer == "sgd":
+            self.optimizer_obj = SGD(learning_rate=self.lr, momentum=self.sgd_momentum)
+            
+        self.model.compile(
+            optimizer=self.optimizer_obj,
+            loss=self.loss,
+            loss_weights=self.loss_weights,
+            metrics=self.metrics,
+            run_eagerly=False,
+        )
+
+    def fit(
+        self,
+        x,
+        y,
+        validation_data=None,
+        callbacks=None,
+        initial_epoch=0,
+        steps_per_epoch=None,
+        workers=1,
+        use_multiprocessing=False,
+    ):
+
+        self.build_neural_network(x, y)
+        self.model.fit(
+            x=x,
+            y=y,
+            validation_data=validation_data,
+            callbacks=callbacks,
+            batch_size=self.batch_size,
+            epochs=self.epochs,
+            verbose=self.verbose,
+            initial_epoch=initial_epoch,
+            steps_per_epoch=steps_per_epoch,
+            workers=workers,
+            use_multiprocessing=use_multiprocessing,
+            shuffle=True,
+        )
+
+        return
+
+    def save_model(self):
+        tf.keras.models.save_model(
+            self.model, os.path.join(self.save_path, self.model_name), save_format="h5"
+        )
+        return
+
+    def predict(self, x, scaler=None):
+        y_out = self.model.predict(x, batch_size=self.batch_size)
+        return y_out
+
+    def predict_monte_carlo(self, x_test, y_test, forward_passes, y_scaler=None):
+        n_samples = x_test.shape[0]
+        pred_size = y_test.shape[1]
+        dropout_mu = np.zeros((forward_passes, n_samples, pred_size))
+
+        for i in range(forward_passes):
+            output = self.model(x_test, training=True)
+            if y_scaler:
+                if output.shape[-1] == 1:
+                    output = np.expand_dims(output, 1)
+                output = y_scaler.inverse_transform(output)
+            dropout_mu[i] = output
+        
+        # # Calculating mean across multiple MCD forward passes
+        # mu = np.mean(dropout_mu, axis=0)  # shape (n_samples, n_classes)
+        # # Calculating variance across multiple MCD forward passes
+        # var = np.var(dropout_mu, axis=0)  # shape (n_samples, n_classes)
+
+        return dropout_mu
+    
+
 class EvidentialRegressorDNN(object):
     """
     A Dense Neural Network Model that can support arbitrary numbers of hidden layers.
@@ -167,13 +361,7 @@ class EvidentialRegressorDNN(object):
         workers=1,
         use_multiprocessing=False,
     ):
-        # inputs = x.shape[1]
-        # if len(y.shape) == 1:
-        #     outputs = 1
-        #     self.training_var = [np.var(y)]
-        # else:
-        #     outputs = y.shape[1]
-        #     self.training_var = [np.var(y[:, i]) for i in range(y.shape[1])]
+
         self.build_neural_network(x, y)
         self.model.fit(
             x=x,
@@ -244,7 +432,7 @@ class EvidentialRegressorDNN(object):
         return mu, v, alpha, beta
 
 
-class ParametricRegressorDNN(EvidentialRegressorDNN):
+class GaussianRegressorDNN(EvidentialRegressorDNN):
     def build_neural_network(self, inputs, outputs):
         """
         Create Keras neural network model and compile it.
@@ -325,6 +513,43 @@ class ParametricRegressorDNN(EvidentialRegressorDNN):
         for i in range(aleatoric.shape[-1]):
             aleatoric[:, i] *= self.training_var[i]
         return mu, aleatoric
+    
+    def predict_monte_carlo(self, x_test, y_test, forward_passes, y_scaler=None):
+        """Function to get the monte-carlo samples and uncertainty estimates
+        through multiple forward passes
+
+        Parameters
+        ----------
+        data_loader : object
+            data loader object from the data loader module
+        forward_passes : int
+            number of monte-carlo samples/forward passes
+        model : object
+            keras model
+        n_classes : int
+            number of classes in the dataset
+        y_scaler : sklearn Scaler
+            perform inverse scaler on predicted
+        """
+        n_samples = x_test.shape[0]
+        pred_size = y_test.shape[1]
+        dropout_mu = np.zeros((forward_passes, n_samples, pred_size))
+        dropout_aleatoric = np.zeros((forward_passes, n_samples, pred_size))
+
+        for i in range(forward_passes):
+            output = self.model(x_test, training=True)
+            mu, aleatoric  = self.calc_uncertainties(output.numpy(), y_scaler)
+            dropout_mu[i] = mu 
+            dropout_aleatoric[i] = aleatoric 
+
+        # # Calculating mean across multiple MCD forward passes
+        # mu = np.mean(dropout_mu, axis=0)  # shape (n_samples, n_classes)
+        # aleatoric = np.mean(dropout_aleatoric, axis=0)  # shape (n_samples, n_classes)
+        # # Calculating variance across multiple MCD forward passes
+        # epistemic = np.var(dropout_mu, axis=0)  # shape (n_samples, n_classes)
+
+        return dropout_mu, dropout_aleatoric
+
 
 
 class CategoricalDNN(object):
@@ -541,8 +766,12 @@ class CategoricalDNN(object):
     def predict(self, x):
         y_prob = self.model.predict(x, batch_size=self.batch_size, verbose=self.verbose)
         return y_prob
+    
+    def predict_proba(self, x):
+        y_prob = self.model.predict(x, batch_size=self.batch_size, verbose=self.verbose)
+        return y_prob
 
-    def predict_dropout(self, x, mc_forward_passes=10):
+    def predict_monte_carlo(self, x, mc_forward_passes=10):
         y_prob = np.stack(
             [
                 np.vstack(
@@ -566,10 +795,6 @@ class CategoricalDNN(object):
             np.sum(-y_prob * np.log(y_prob + epsilon), axis=-1), axis=0
         )  # shape (n_samples,)
         return pred_probs, epistemic_variance, entropy, mutual_info
-
-    def predict_proba(self, x):
-        y_prob = self.model.predict(x, batch_size=self.batch_size, verbose=self.verbose)
-        return y_prob
 
     def compute_uncertainties(self, y_pred, num_classes=4):
         return calc_prob_uncertainty(y_pred, num_classes=num_classes)

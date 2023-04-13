@@ -1,7 +1,11 @@
 seed: 1000
-save_loc: "/glade/work/schreck/repos/evidential/main/results/echo_parametric"
+save_loc: "/glade/work/schreck/repos/evidential/main/results/surface_layer/gaussian/model"
 training_metric: "val_mae"
-monte_carlo_passes: 10
+
+ensemble:
+    n_models: 20
+    n_splits: 1
+    monte_carlo_passes: 50
 
 data:
     save_loc: "/glade/p/cisl/aiml/ai2es/surfacelayer/cabauw_derived_data_20210720.csv"
@@ -17,40 +21,38 @@ data:
         'kinematic_latent_heat_flux:surface:g_kg-1_m_s-1'
     ]
     splitter: "GroupShuffleSplit"
+    train_size: 0.9
     scaler_x:
-        type: "robust"
+        type: "quantile"
         params:
             copy: true
             with_mean: true
             with_std: true
     scaler_y:
-        type: "symmetric"
+        type: "normalize"
         params:
             copy: true
             with_mean: true
             with_std: true
     split_col: "day"
-    n_splits: 10
 
 model:
-    hidden_layers: 1
-    hidden_neurons: 4500
-    activation: "relu"
-    optimizer: "adam"
-    metrics: "mae"
-    evidential_coef: 0.0
-    uncertainties: False
-    lr: 0.00001
-    kernel_reg: 'l2'
-    l1_weight: 0.0
-    l2_weight: 0.0
-    batch_size: 256
-    use_noise: False
-    use_dropout: True
+    activation: relu
+    batch_size: 283
     dropout_alpha: 0.2
     epochs: 100
+    hidden_layers: 4
+    hidden_neurons: 7907
+    kernel_reg: l2
+    l1_weight: 0.0
+    l2_weight: 1.3830591026605887e-06
+    lr: 0.0002440268028890707
+    metrics: mae
+    optimizer: adam
+    uncertainties: false
+    use_dropout: true
+    use_noise: false
     verbose: 2
-    
     
 callbacks:
   EarlyStopping:
@@ -79,12 +81,12 @@ callbacks:
     verbose: 0
     
 pbs:
-  name: para-trainer
+  name: gauss-model
   select: 1
   ncpus: 8
   ngpus: 1
   mem: 128GB
-  walltime: 12:00:00
+  walltime: 24:00:00
   gpu_type: v100
   account: NAML0001
   queue: casper
