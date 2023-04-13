@@ -175,11 +175,12 @@ def trainer(conf, trial=False):
     _test_data[[f"{x}_pred" for x in output_cols]] = mu
     _test_data[[f"{x}_ale" for x in output_cols]] = aleatoric
     _test_data[[f"{x}_epi" for x in output_cols]] = epistemic
-    
+
     os.makedirs(os.path.join(save_loc, "evaluate"), exist_ok=True)
     _test_data.to_csv(os.path.join(save_loc, "evaluate/test.csv"))
-    np.save(os.path.join(save_loc, f"evaluate/test_mu.npy"), ensemble_mu)
-    np.save(os.path.join(save_loc, f"evaluate/test_sigma.npy"), ensemble_var)
+    np.save(os.path.join(save_loc, "evaluate/test_mu.npy"), ensemble_mu)
+    np.save(os.path.join(save_loc, "evaluate/test_aleatoric.npy"), ensemble_ale)
+    np.save(os.path.join(save_loc, "evaluate/test_epistemic.npy"), ensemble_epi)
 
     # make some figures
     os.makedirs(os.path.join(save_loc, "metrics"), exist_ok=True)
