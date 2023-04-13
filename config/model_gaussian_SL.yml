@@ -1,6 +1,7 @@
 seed: 1000
-save_loc: "/glade/work/schreck/repos/evidential/main/results/surface_layer/gaussian/model"
-training_metric: "val_mae"
+save_loc: "/glade/work/schreck/repos/evidential/main/results/test"
+training_metric: "val_pitd"
+direction: "max"
 
 ensemble:
     n_models: 20

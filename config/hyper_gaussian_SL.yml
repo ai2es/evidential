@@ -1,5 +1,5 @@
 log: True
-save_path: "/glade/work/schreck/repos/evidential/main/results/echo_parametric"
+save_path: "/glade/work/schreck/repos/evidential/main/results/test"
 
 pbs:
   jobs: 15
@@ -23,9 +23,9 @@ optuna:
   storage: "study.db"
   study_name: "parametric"
   storage_type: "sqlite"
-  objective: "/glade/work/schreck/repos/evidential/main/applications/train_parametric_SL.py"
-  direction: "minimize"
-  metric: "val_mae"
+  objective: "/glade/work/schreck/repos/evidential/main/applications/train_gaussian_SL.py"
+  direction: "maximize"
+  metric: "val_pitd"
   n_trials: 1000
   gpu: True
   sampler:

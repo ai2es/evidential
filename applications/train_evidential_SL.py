@@ -16,6 +16,7 @@ import tensorflow as tf
 from argparse import ArgumentParser
 
 from tensorflow.keras import backend as K
+from evml.pit import pit_deviation_skill_score
 from evml.keras.models import EvidentialRegressorDNN
 from evml.keras.callbacks import get_callbacks
 from evml.splitting import load_splitter
@@ -61,6 +62,7 @@ def trainer(conf, trial=False):
     save_loc = conf["save_loc"]
     data_params = conf["data"]
     training_metric = conf["training_metric"]
+    direction = conf["direction"]
     n_splits = conf["ensemble"]["n_splits"]
 
     model_params = conf["model"]
@@ -101,7 +103,7 @@ def trainer(conf, trial=False):
 
     best_model = None
     best_split = None
-    best_model_score = 1e10
+    best_model_score = 1e10 if direction == "min" else -1e10
     for data_seed in tqdm.tqdm(range(n_splits)):
         # select indices from the split, data splits
         train_index, valid_index = splits[data_seed]
@@ -141,18 +143,70 @@ def trainer(conf, trial=False):
         )
         history = model.model.history
 
+        # Get the value of the metric
+        if "pit" in training_metric:
+            pitd = []
+            mu, ale, epi = model.predict(x_valid)
+            for i, col in enumerate(output_cols):
+                pitd.append(
+                    pit_deviation_skill_score(
+                        y_valid[:, i],
+                        np.stack([mu[:, i], np.sqrt(ale[:, i] + epi[:, i])], -1),
+                        pred_type="gaussian",
+                    )
+                )
+            optimization_metric = np.mean(pitd)
+        elif direction == "min":
+            optimization_metric = min(history.history[training_metric])
+        elif direction == "max":
+            optimization_metric = max(history.history[training_metric])
+
         # If ECHO is running this script, n_splits has been set to 1, return the metric here
         if trial is not False:
-            return {
-                x: min(y) for x, y in history.history.items() if x not in trial.params
-            }
+            return {training_metric: optimization_metric}
+
+        # Write to the logger
+        logger.info(
+            f"Finished split {data_seed} with metric {training_metric} = {optimization_metric}"
+        )
 
         # Save if its the best model
-        if min(history.history[training_metric]) < best_model_score:
-            best_model = model.model.get_weights()
+        c1 = (direction == "min") and (optimization_metric < best_model_score)
+        c2 = (direction == "max") and (optimization_metric > best_model_score)
+        if c1 | c2:
+            best_model = model
+            best_model_score = optimization_metric
+            best_split = data_seed
             model.model_name = "best.h5"
             model.save_model()
-            best_split = data_seed
+
+        #         # If ECHO is running this script, n_splits has been set to 1, return the metric here
+        #         if trial is not False:
+        #             results =  {
+        #                 x: min(y) for x, y in history.history.items() if x not in trial.params
+        #             }
+
+        #             if "pit" in training_metric:
+        #                 pids = []
+        #                 mu, aleatoric, epistemic = model.predict(x_valid, y_scaler = y_scaler)
+        #                 for i, col in enumerate(output_cols):
+        #                     total_uq = np.sqrt(aleatoric + epistemic)
+        #                     pitd = pit_deviation_skill_score(
+        #                         y_valid,
+        #                         np.stack([mu, total_uq], -1),
+        #                         pred_type="gaussian"
+        #                     )
+        #                     pids.append(pitd)
+        #                 results["val_pitd"] = np.mean(pids)
+
+        #             return results
+
+        #         # Save if its the best model
+        #         if min(history.history[training_metric]) < best_model_score:
+        #             best_model = model.model.get_weights()
+        #             model.model_name = "best.h5"
+        #             model.save_model()
+        #             best_split = data_seed
 
         # evaluate on the test holdout split
         result = model.predict(x_test, scaler=y_scaler)

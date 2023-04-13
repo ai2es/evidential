@@ -16,6 +16,7 @@ import tensorflow as tf
 from argparse import ArgumentParser
 
 from keras import backend as K
+from evml.pit import pit_deviation_skill_score
 from evml.keras.models import GaussianRegressorDNN
 from evml.keras.callbacks import get_callbacks
 from evml.splitting import load_splitter
@@ -64,6 +65,7 @@ def trainer(conf, trial=False, mode="single"):
     save_loc = conf["save_loc"]
     data_params = conf["data"]
     training_metric = conf["training_metric"]
+    direction = conf["direction"]
 
     # ensemble parameters
     monte_carlo_passes = conf["ensemble"]["monte_carlo_passes"]
@@ -91,8 +93,6 @@ def trainer(conf, trial=False, mode="single"):
     os.makedirs(os.path.join(save_loc, f"{mode}/evaluate"), exist_ok=True)
 
     if not os.path.isfile(os.path.join(save_loc, f"{mode}/models", "model.yml")):
-        shutil.copyfile(config, os.path.join(save_loc, f"{mode}/models", "model.yml"))
-    else:
         with open(os.path.join(save_loc, f"{mode}/models", "model.yml"), "w") as fid:
             yaml.dump(conf, fid)
 
@@ -122,7 +122,7 @@ def trainer(conf, trial=False, mode="single"):
 
     best_model = None
     best_data_split = None
-    best_model_score = 1e10
+    best_model_score = 1e10 if direction == "min" else -1e10
 
     for model_seed in range(n_models):
 
@@ -194,22 +194,45 @@ def trainer(conf, trial=False, mode="single"):
             )
             history = model.model.history
 
+            # Get the value of the metric
+            if "pit" in training_metric:
+                pitd = []
+                y_pred = model.predict(x_valid)
+                mu, var = model.calc_uncertainties(y_pred, y_scaler)
+                for i, col in enumerate(output_cols):
+                    pitd.append(
+                        pit_deviation_skill_score(
+                            y_valid[:, i],
+                            np.stack([mu[:, i], np.sqrt(var[:, i])], -1),
+                            pred_type="gaussian",
+                        )
+                    )
+                optimization_metric = np.mean(pitd)
+            elif direction == "min":
+                optimization_metric = min(history.history[training_metric])
+            elif direction == "max":
+                optimization_metric = max(history.history[training_metric])
+
             # If ECHO is running this script, n_splits has been set to 1, return the metric here
             if trial is not False:
-                return {
-                    x: min(y)
-                    for x, y in history.history.items()
-                    if x not in trial.params
-                }
+                return {training_metric: optimization_metric}
+            
+            # Write to the logger
+            logger.info(
+                f"Finished model/data split {model_seed}/{data_seed} with metric {training_metric} = {optimization_metric}"
+            )
 
             # Save if its the best model
-            if min(history.history[training_metric]) < best_model_score:
+            c1 = (direction == "min") and (optimization_metric < best_model_score)
+            c2 = (direction == "max") and (optimization_metric > best_model_score)
+            if c1 | c2:
                 best_model = model
+                best_model_score = optimization_metric
                 best_data_split = data_seed
                 model.model_name = "best.h5"
                 model.save_model()
 
-            # evaluate on the test holdout split
+            # Evaluate on the test holdout split
             y_pred = model.predict(x_test)
             mu, aleatoric = model.calc_uncertainties(y_pred, y_scaler)
             if mu.shape[-1] == 1:
@@ -225,7 +248,7 @@ def trainer(conf, trial=False, mode="single"):
                 os.path.join(save_loc, f"{mode}/evaluate", f"test_{data_seed}.csv")
             )
 
-            # delete old models
+            # Delete old models
             del model
             tf.keras.backend.clear_session()
             gc.collect()
@@ -263,7 +286,7 @@ def trainer(conf, trial=False, mode="single"):
 
     # Compute epistemic uncertainty via MC-dropout
     if monte_carlo_passes > 0:
-        logger.info(f"Computing uncertainties using Monte Carlo dropout")
+        logger.info("Computing uncertainties using Monte Carlo dropout")
 
         dropout_mu, dropout_aleatoric = best_model.predict_monte_carlo(
             x_test,

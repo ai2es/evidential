@@ -1,6 +1,7 @@
 seed: 1000
-save_loc: "/glade/work/schreck/repos/evidential/main/results/echo_evidential"
-training_metric: "val_loss"
+save_loc: "/glade/work/schreck/repos/evidential/main/results/test"
+training_metric: "val_pitd"
+direction: "max"
 
 ensemble:
     n_splits: 10
@@ -21,13 +22,13 @@ data:
     splitter: "GroupShuffleSplit"
     train_size: 0.9
     scaler_x:
-        type: "robust"
+        type: "quantile"
         params:
             copy: true
             with_mean: true
             with_std: true
     scaler_y:
-        type: "symmetric"
+        type: "normalize"
         params:
             copy: true
             with_mean: true

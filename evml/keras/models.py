@@ -542,12 +542,6 @@ class GaussianRegressorDNN(EvidentialRegressorDNN):
             dropout_mu[i] = mu 
             dropout_aleatoric[i] = aleatoric 
 
-        # # Calculating mean across multiple MCD forward passes
-        # mu = np.mean(dropout_mu, axis=0)  # shape (n_samples, n_classes)
-        # aleatoric = np.mean(dropout_aleatoric, axis=0)  # shape (n_samples, n_classes)
-        # # Calculating variance across multiple MCD forward passes
-        # epistemic = np.var(dropout_mu, axis=0)  # shape (n_samples, n_classes)
-
         return dropout_mu, dropout_aleatoric
 
 
