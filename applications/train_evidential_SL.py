@@ -61,6 +61,7 @@ def trainer(conf, trial=False):
     save_loc = conf["save_loc"]
     data_params = conf["data"]
     training_metric = conf["training_metric"]
+    n_splits = conf["ensemble"]["n_splits"]
 
     model_params = conf["model"]
     model_params["save_path"] = save_loc
@@ -70,13 +71,15 @@ def trainer(conf, trial=False):
     data["day"] = data["Time"].apply(lambda x: str(x).split(" ")[0])
 
     split_col = data_params["split_col"]
-    n_splits = data_params["n_splits"]
     input_cols = data_params["input_cols"]
     output_cols = data_params["output_cols"]
 
     # Need the same test_data for all trained models (data and model ensembles)
     gsp = load_splitter(
-        data_params["splitter"], n_splits=1, random_state=seed, train_size=0.9
+        data_params["splitter"],
+        n_splits=1,
+        random_state=seed,
+        train_size=data_params["train_size"],
     )
     splits = list(gsp.split(data, groups=data[split_col]))
     train_index, test_index = splits[0]
@@ -134,7 +137,7 @@ def trainer(conf, trial=False):
             x_train,
             y_train,
             validation_data=(x_valid, y_valid),
-            callbacks=get_callbacks(conf, path_extend="")
+            callbacks=get_callbacks(conf, path_extend=""),
         )
         history = model.model.history
 
@@ -152,7 +155,7 @@ def trainer(conf, trial=False):
             best_split = data_seed
 
         # evaluate on the test holdout split
-        result = model.predict(x_test, scaler = y_scaler)
+        result = model.predict(x_test, scaler=y_scaler)
         mu, aleatoric, epistemic = result
         ensemble_mu[data_seed] = mu
         ensemble_ale[data_seed] = aleatoric
@@ -172,7 +175,11 @@ def trainer(conf, trial=False):
     _test_data[[f"{x}_pred" for x in output_cols]] = mu
     _test_data[[f"{x}_ale" for x in output_cols]] = aleatoric
     _test_data[[f"{x}_epi" for x in output_cols]] = epistemic
-    _test_data.to_csv(os.path.join(save_loc, "test.csv"))
+    
+    os.makedirs(os.path.join(save_loc, "evaluate"), exist_ok=True)
+    _test_data.to_csv(os.path.join(save_loc, "evaluate/test.csv"))
+    np.save(os.path.join(save_loc, f"evaluate/test_mu.npy"), ensemble_mu)
+    np.save(os.path.join(save_loc, f"evaluate/test_sigma.npy"), ensemble_var)
 
     # make some figures
     os.makedirs(os.path.join(save_loc, "metrics"), exist_ok=True)
@@ -182,6 +189,8 @@ def trainer(conf, trial=False):
         mu,
         aleatoric,
         epistemic,
+        ensemble_mu=ensemble_mu,
+        ensemble_type="Cross validation ensemble",
         fn=os.path.join(save_loc, "metrics"),
     )
 
@@ -233,9 +242,10 @@ if __name__ == "__main__":
 
     if launch:
         from pathlib import Path
+
         script_path = Path(__file__).absolute()
         logging.info("Launching to PBS")
         launch_pbs_jobs(config, script_path)
         sys.exit()
-        
+
     result = trainer(conf)

@@ -1,7 +1,9 @@
 seed: 1000
 save_loc: "/glade/work/schreck/repos/evidential/main/results/echo_evidential"
 training_metric: "val_loss"
-monte_carlo_passes: 10
+
+ensemble:
+    n_splits: 10
 
 data:
     save_loc: "/glade/p/cisl/aiml/ai2es/surfacelayer/cabauw_derived_data_20210720.csv"
@@ -17,6 +19,7 @@ data:
         'kinematic_latent_heat_flux:surface:g_kg-1_m_s-1'
     ]
     splitter: "GroupShuffleSplit"
+    train_size: 0.9
     scaler_x:
         type: "robust"
         params:
@@ -30,28 +33,26 @@ data:
             with_mean: true
             with_std: true
     split_col: "day"
-    n_splits: 10
 
 model:
-    hidden_layers: 1
-    hidden_neurons: 4500
-    activation: "relu"
-    optimizer: "adam"
-    metrics: "mae"
-    evidential_coef: 0.1
-    uncertainties: True
-    lr: 0.00001
-    kernel_reg: 'l2'
-    l1_weight: 0.0
-    l2_weight: 0.0
-    batch_size: 256
-    use_noise: False
-    use_dropout: True
+    activation: relu
+    batch_size: 193
     dropout_alpha: 0.2
     epochs: 100
+    evidential_coef: 0.6654439861214466
+    hidden_layers: 3
+    hidden_neurons: 6088
+    kernel_reg: l2
+    l1_weight: 0.0
+    l2_weight: 7.908676527243475e-10
+    lr: 3.5779279071474884e-05
+    metrics: mae
+    optimizer: adam
+    uncertainties: true
+    use_dropout: true
+    use_noise: false
     verbose: 2
-    
-    
+      
 callbacks:
   EarlyStopping:
     monitor: "val_loss"

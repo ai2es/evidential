@@ -407,7 +407,7 @@ class EvidentialRegressorDNN(object):
         aleatoric = beta / (alpha - 1)
         epistemic = beta / (v * (alpha - 1))
 
-        if mu.shape[-1] == 1:
+        if len(mu.shape) == 1:
             mu = np.expand_dims(mu, 1)
             aleatoric = np.expand_dims(aleatoric, 1)
             epistemic = np.expand_dims(epistemic, 1)
@@ -505,7 +505,7 @@ class GaussianRegressorDNN(EvidentialRegressorDNN):
 
     def calc_uncertainties(self, preds, y_scaler=False):
         mu, aleatoric = np.split(preds, 2, axis=-1)
-        if mu.shape[-1] == 1:
+        if len(mu.shape) == 1:
             mu = np.expand_dims(mu)
             aleatoric = np.expand_dims(aleatoric)
         if y_scaler:
