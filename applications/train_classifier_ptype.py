@@ -5,12 +5,13 @@ import yaml
 import shutil
 import os
 import gc
+import sys
 import tqdm
 import optuna
 import pickle
 import warnings
 import numpy as np
-import pandas as pd 
+import pandas as pd
 from tensorflow.keras import backend as K
 from argparse import ArgumentParser
 
@@ -71,7 +72,7 @@ class Objective(BaseObjective):
         return conf
 
 
-def trainer(conf, evaluate=True, data_split=0, mc_forward_passes = 0):
+def trainer(conf, evaluate=True, data_split=0, mc_forward_passes=0):
     input_features = (
         conf["TEMP_C"] + conf["T_DEWPOINT_C"] + conf["UGRD_m/s"] + conf["VGRD_m/s"]
     )
@@ -83,7 +84,7 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes = 0):
     else:
         use_uncertainty = False
     # load data using the split (see n_splits in config)
-    data = load_ptype_data_day(conf, data_split=data_split, verbose=1, drop_mixed = False)
+    data = load_ptype_data_day(conf, data_split=data_split, verbose=1, drop_mixed=False)
     # check if we should scale the input data by groups
     scale_groups = [] if "scale_groups" not in conf else conf["scale_groups"]
     groups = [conf[g] for g in scale_groups]
@@ -109,7 +110,9 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes = 0):
             if conf["n_splits"] == 1:
                 fn = os.path.join(conf["save_loc"], "scalers", f"{scaler_name}.json")
             else:
-                fn = os.path.join(conf["save_loc"], "scalers", f"{scaler_name}_{data_split}.json")
+                fn = os.path.join(
+                    conf["save_loc"], "scalers", f"{scaler_name}_{data_split}.json"
+                )
             try:
                 save_scaler(scaler, fn)
             except TypeError:
@@ -149,19 +152,23 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes = 0):
     mlp = CategoricalDNN(**conf["model"], callbacks=callbacks)
     # train the model
     history = mlp.fit(scaled_data["train_x"], scaled_data["train_y"])
-    
+
     if conf["n_splits"] > 1:
         pd_history = pd.DataFrame.from_dict(history.history)
         pd_history["split"] = data_split
-        pd_history.to_csv(os.path.join(conf["save_loc"], "models", f"training_log_{data_split}.csv"))
-    
+        pd_history.to_csv(
+            os.path.join(conf["save_loc"], "models", f"training_log_{data_split}.csv")
+        )
+
     # Predict on the data splits
     if evaluate:
         # Save the best model when not using ECHO
         if conf["n_splits"] == 1:
             mlp.model.save(os.path.join(conf["save_loc"], "models", "model.h5"))
         else:
-            mlp.model.save(os.path.join(conf["save_loc"], "models", f"model_{data_split}.h5"))
+            mlp.model.save(
+                os.path.join(conf["save_loc"], "models", f"model_{data_split}.h5")
+            )
         for name in data.keys():
             x = scaled_data[f"{name}_x"]
             pred_probs = mlp.predict(x)
@@ -198,11 +205,17 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes = 0):
                 )
                 data[name]["entropy"] = entropy
                 data[name]["mutual_info"] = mutual_info
-                
+
             if conf["n_splits"] == 1:
-                data[name].to_parquet(os.path.join(conf["save_loc"], f"evaluate/{name}.parquet"))
+                data[name].to_parquet(
+                    os.path.join(conf["save_loc"], f"evaluate/{name}.parquet")
+                )
             else:
-                data[name].to_parquet(os.path.join(conf["save_loc"], f"evaluate/{name}_{data_split}.parquet"))
+                data[name].to_parquet(
+                    os.path.join(
+                        conf["save_loc"], f"evaluate/{name}_{data_split}.parquet"
+                    )
+                )
         return 1
 
     elif conf["direction"] == "max":  # Return metric to be used in ECHO
@@ -260,7 +273,7 @@ if __name__ == "__main__":
 
     args_dict = vars(parser.parse_args())
     config_file = args_dict.pop("model_config")
-    
+
     launch = bool(int(args_dict.pop("launch")))
     n_splits = int(args_dict.pop("n_splits"))
     this_split = int(args_dict.pop("split_id"))
@@ -269,9 +282,9 @@ if __name__ == "__main__":
 
     with open(config_file) as cf:
         conf = yaml.load(cf, Loader=yaml.FullLoader)
-        
+
     # If we are running the training and not launching
-    #conf["n_splits"] = n_splits
+    # conf["n_splits"] = n_splits
 
     # Create the save directory if does not exist
     save_loc = conf["save_loc"]
@@ -285,28 +298,25 @@ if __name__ == "__main__":
     else:
         with open(os.path.join(save_loc, "model.yml"), "w") as fid:
             yaml.dump(conf, fid)
-    
+
     if launch:
         if run_serially:
             # If we are running serially, launch only one job
             # set serial flag = True
             # set launch flag = False
-                pass
+            pass
         else:
             # Launch QSUB jobs and exit
             for split in range(n_splits):
-                   pass 
+                # launch_pbs_jobs
+                pass
         sys.exit()
-    
+
     # Run in serial over the number of ensembles (one at a time)
     if run_serially:
         for split in tqdm.tqdm(range(n_splits)):
-            trainer(conf, 
-                    data_split = split, 
-                    mc_forward_passes = mc_steps)
-    
+            trainer(conf, data_split=split, mc_forward_passes=mc_steps)
+
     # Run one ensemble
     else:
-        trainer(conf, 
-                data_split = this_split, 
-                mc_forward_passes = mc_steps)
+        trainer(conf, data_split=this_split, mc_forward_passes=mc_steps)

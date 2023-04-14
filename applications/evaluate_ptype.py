@@ -226,7 +226,7 @@ def evaluate(conf, reevaluate=False):
             colors=sym_colors,
             save_location=os.path.join(save_loc, "plots", f"coverage_{name}.pdf"),
         )
-        
+
         if name == "test":
 
             # UQ figures
