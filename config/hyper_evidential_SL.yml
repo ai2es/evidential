@@ -1,5 +1,5 @@
 log: True
-save_path: "/glade/work/schreck/repos/evidential/main/results/test"
+save_path: "/glade/work/schreck/repos/evidential/main/results/0413_sl/evidential"
 
 pbs:
   jobs: 15
@@ -73,8 +73,8 @@ optuna:
       settings:
         name: "scaler_x"
         choices: ["standard", "normalize", "symmetric", "quantile", "robust"]
-    data:scaler_y:type:
-      type: "categorical"
-      settings:
-        name: "scaler_y"
-        choices: ["standard", "normalize", "symmetric", "quantile", "robust"]
+    # data:scaler_y:type:
+    #   type: "categorical"
+    #   settings:
+    #     name: "scaler_y"
+    #     choices: ["standard", "normalize", "symmetric", "quantile", "robust"]

@@ -45,7 +45,7 @@ class Objective(BaseObjective):
         if "ModelCheckpoint" in conf["callbacks"]:
             del conf["callbacks"]["ModelCheckpoint"]
         # Only use 1 data split
-        conf["data"]["n_splits"] = 1
+        conf["ensemble"]["n_splits"] = 1
 
         try:
             return trainer(conf, trial=trial)
@@ -179,34 +179,6 @@ def trainer(conf, trial=False):
             best_split = data_seed
             model.model_name = "best.h5"
             model.save_model()
-
-        #         # If ECHO is running this script, n_splits has been set to 1, return the metric here
-        #         if trial is not False:
-        #             results =  {
-        #                 x: min(y) for x, y in history.history.items() if x not in trial.params
-        #             }
-
-        #             if "pit" in training_metric:
-        #                 pids = []
-        #                 mu, aleatoric, epistemic = model.predict(x_valid, y_scaler = y_scaler)
-        #                 for i, col in enumerate(output_cols):
-        #                     total_uq = np.sqrt(aleatoric + epistemic)
-        #                     pitd = pit_deviation_skill_score(
-        #                         y_valid,
-        #                         np.stack([mu, total_uq], -1),
-        #                         pred_type="gaussian"
-        #                     )
-        #                     pids.append(pitd)
-        #                 results["val_pitd"] = np.mean(pids)
-
-        #             return results
-
-        #         # Save if its the best model
-        #         if min(history.history[training_metric]) < best_model_score:
-        #             best_model = model.model.get_weights()
-        #             model.model_name = "best.h5"
-        #             model.save_model()
-        #             best_split = data_seed
 
         # evaluate on the test holdout split
         result = model.predict(x_test, scaler=y_scaler)

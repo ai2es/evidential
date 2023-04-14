@@ -45,8 +45,9 @@ class Objective(BaseObjective):
         if "ModelCheckpoint" in conf["callbacks"]:
             del conf["callbacks"]["ModelCheckpoint"]
         # Only use 1 data split and 1 model (one model seed)
-        conf["data"]["n_splits"] = 1
-        conf["n_models"] = 1
+        conf["ensemble"]["n_splits"] = 1
+        conf["ensemble"]["n_models"] = 1
+        conf["ensemble"]["monte_carlo_passes"] = 0
         # Skip MC dropout
         conf["monte_carlo_passes"] = 0
 
@@ -83,14 +84,15 @@ def trainer(conf, trial=False, mode="single"):
     input_cols = data_params["input_cols"]
     output_cols = data_params["output_cols"]
 
-    # Make some directories
+    # Make some directories if ECHO is not running
     if monte_carlo_passes > 1:
         os.makedirs(os.path.join(save_loc, "monte_carlo/metrics"), exist_ok=True)
         os.makedirs(os.path.join(save_loc, "monte_carlo/evaluate"), exist_ok=True)
-    os.makedirs(os.path.join(save_loc, mode), exist_ok=True)
-    os.makedirs(os.path.join(save_loc, f"{mode}/models"), exist_ok=True)
-    os.makedirs(os.path.join(save_loc, f"{mode}/metrics"), exist_ok=True)
-    os.makedirs(os.path.join(save_loc, f"{mode}/evaluate"), exist_ok=True)
+    if trial is False: # Dont create directories if ECHO is running
+        os.makedirs(os.path.join(save_loc, mode), exist_ok=True)
+        os.makedirs(os.path.join(save_loc, f"{mode}/models"), exist_ok=True)
+        os.makedirs(os.path.join(save_loc, f"{mode}/metrics"), exist_ok=True)
+        os.makedirs(os.path.join(save_loc, f"{mode}/evaluate"), exist_ok=True)
 
     if not os.path.isfile(os.path.join(save_loc, f"{mode}/models", "model.yml")):
         with open(os.path.join(save_loc, f"{mode}/models", "model.yml"), "w") as fid:
