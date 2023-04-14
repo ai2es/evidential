@@ -24,9 +24,6 @@ dependencies:
   - numba
   - cython
   - pip:
-    - torch
     - pyarrow
     - fastparquet
-    - hagelslag
-    - imblearn
     - .

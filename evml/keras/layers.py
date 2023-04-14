@@ -32,3 +32,25 @@ class DenseNormalGamma(tf.keras.layers.Layer):
         base_config['units'] = self.units
         return base_config
       
+        
+        
+class DenseNormal(tf.keras.layers.Layer):
+    def __init__(self, units):
+        super(DenseNormal, self).__init__()
+        self.units = int(units)
+        self.dense = tf.keras.layers.Dense(2 * self.units, activation = "sigmoid")
+
+    def call(self, x):
+        output = self.dense(x)
+        mu, sigma = tf.split(output, 2, axis=-1)
+        #mu = tf.nn.sigmoid(mu) #+ tf.keras.backend.epsilon()
+        #sigma = tf.nn.softplus(logsigma) + tf.keras.backend.epsilon()
+        return tf.concat([mu, sigma], axis=-1)
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], 2 * self.units)
+
+    def get_config(self):
+        base_config = super(DenseNormal, self).get_config()
+        base_config['units'] = self.units
+        return base_config
