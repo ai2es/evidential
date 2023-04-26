@@ -11,6 +11,10 @@ ptypes: ['ra_percent', 'sn_percent', 'pl_percent', 'fzra_percent']
 metric: "val_ave_acc"
 direction: "max"
 
+ensemble:
+    n_splits: 1
+    mc_steps: 0
+
 model:
     hidden_layers: 11
     hidden_neurons: 541

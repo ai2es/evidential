@@ -50,7 +50,7 @@ def locate_best_model(filepath, metric="val_ave_acc", direction="max"):
 
 def evaluate(conf, reevaluate=False):
     output_features = conf["ptypes"]
-    n_splits = conf["n_splits"]
+    n_splits = conf["ensemble"]["n_splits"]
     save_loc = conf["save_loc"]
     labels = ["rain", "snow", "sleet", "frz-rain"]
     sym_colors = ["blue", "grey", "red", "purple"]

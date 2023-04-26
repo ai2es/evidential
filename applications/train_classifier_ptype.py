@@ -39,7 +39,7 @@ class Objective(BaseObjective):
     def train(self, trial, conf):
         K.clear_session()
         gc.collect()
-        conf["n_splits"] = 1
+        conf["ensemble"]["n_splits"] = 1
         if "CSVLogger" in conf["callbacks"]:
             del conf["callbacks"]["CSVLogger"]
         if "ModelCheckpoint" in conf["callbacks"]:
@@ -107,7 +107,7 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes=0):
     if evaluate:
         os.makedirs(os.path.join(conf["save_loc"], "scalers"), exist_ok=True)
         for scaler_name, scaler in scalers.items():
-            if conf["n_splits"] == 1:
+            if conf["ensemble"]["n_splits"] == 1:
                 fn = os.path.join(conf["save_loc"], "scalers", f"{scaler_name}.json")
             else:
                 fn = os.path.join(
@@ -153,7 +153,7 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes=0):
     # train the model
     history = mlp.fit(scaled_data["train_x"], scaled_data["train_y"])
 
-    if conf["n_splits"] > 1:
+    if conf["ensemble"]["n_splits"] > 1:
         pd_history = pd.DataFrame.from_dict(history.history)
         pd_history["split"] = data_split
         pd_history.to_csv(
@@ -163,7 +163,7 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes=0):
     # Predict on the data splits
     if evaluate:
         # Save the best model when not using ECHO
-        if conf["n_splits"] == 1:
+        if conf["ensemble"]["n_splits"] == 1:
             mlp.model.save(os.path.join(conf["save_loc"], "models", "model.h5"))
         else:
             mlp.model.save(
@@ -206,7 +206,7 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes=0):
                 data[name]["entropy"] = entropy
                 data[name]["mutual_info"] = mutual_info
 
-            if conf["n_splits"] == 1:
+            if conf["ensemble"]["n_splits"] == 1:
                 data[name].to_parquet(
                     os.path.join(conf["save_loc"], f"evaluate/{name}.parquet")
                 )
@@ -238,23 +238,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "-l",
         dest="launch",
-        type=str,
+        type=bool,
         default=False,
         help="Launch n_splits number of qsub jobs.",
     )
     parser.add_argument(
         "-s",
         dest="serial",
-        type=str,
+        type=bool,
         default=False,
         help="Whether to parallelize the training over GPUs (default is 0)",
-    )
-    parser.add_argument(
-        "-n",
-        dest="n_splits",
-        type=int,
-        default=1,
-        help="The number of data ensembles to create (n_splits). Default = 1",
     )
     parser.add_argument(
         "-i",
@@ -263,28 +256,25 @@ if __name__ == "__main__":
         default=0,
         help="Which split this node will run (ranges from 0 to n_splits-1)",
     )
-    parser.add_argument(
-        "-m",
-        dest="mc_steps",
-        type=int,
-        default=0,
-        help="The number of MC steps used to create an ensemble (default = 0)",
-    )
 
     args_dict = vars(parser.parse_args())
     config_file = args_dict.pop("model_config")
 
     launch = bool(int(args_dict.pop("launch")))
-    n_splits = int(args_dict.pop("n_splits"))
     this_split = int(args_dict.pop("split_id"))
-    mc_steps = int(args_dict.pop("mc_steps"))
     run_serially = bool(int(args_dict.pop("serial")))
 
     with open(config_file) as cf:
-        conf = yaml.load(cf, Loader=yaml.FullLoader)
-
+        conf = yaml.load(cf, Loader=yaml.FullLoader) 
+        
     # If we are running the training and not launching
-    # conf["n_splits"] = n_splits
+    n_splits = conf["ensemble"]["n_splits"]
+    mc_steps = conf["ensemble"]["mc_steps"]
+    
+    # Add field as work-around until ptype repo gets updated
+    conf["n_splits"] = n_splits
+    
+    assert this_split <= (n_splits-1), "The worker ID is larger than the number of cross-validation n_splits."
 
     # Create the save directory if does not exist
     save_loc = conf["save_loc"]
@@ -300,16 +290,18 @@ if __name__ == "__main__":
             yaml.dump(conf, fid)
 
     if launch:
+        from pathlib import Path
+        script_path = Path(__file__).absolute()
+        logging.info("Launching to PBS")
         if run_serially:
             # If we are running serially, launch only one job
             # set serial flag = True
-            # set launch flag = False
-            pass
+            launch_pbs_jobs(config_file, script_path, args = '-s 1')
         else:
             # Launch QSUB jobs and exit
             for split in range(n_splits):
                 # launch_pbs_jobs
-                pass
+                launch_pbs_jobs(config_file, script_path, args = f'-i {split}')
         sys.exit()
 
     # Run in serial over the number of ensembles (one at a time)

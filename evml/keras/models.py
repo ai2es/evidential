@@ -128,17 +128,13 @@ class RegressorDNN(object):
                 nn_model = GaussianNoise(self.noise_sd, name=f"ganoise_h_{h:02d}")(
                     nn_model
                 )
-        nn_model = Dense(outputs.shape[-1], name="dense_last")(
-            nn_model
-        )
+        nn_model = Dense(outputs.shape[-1], name="dense_last")(nn_model)
         self.model = Model(nn_input, nn_model)
         if self.optimizer == "adam":
-            self.optimizer_obj = Adam(
-                learning_rate=self.lr
-            )
+            self.optimizer_obj = Adam(learning_rate=self.lr)
         elif self.optimizer == "sgd":
             self.optimizer_obj = SGD(learning_rate=self.lr, momentum=self.sgd_momentum)
-            
+
         self.model.compile(
             optimizer=self.optimizer_obj,
             loss=self.loss,
@@ -182,6 +178,11 @@ class RegressorDNN(object):
             self.model, os.path.join(self.save_path, self.model_name), save_format="h5"
         )
         return
+    
+    def load_model(self, input_shape, output_shape, weights_path):
+        self.build_neural_network(input_shape, output_shape)
+        self.model.load_weights(weights_path)
+        return
 
     def predict(self, x, scaler=None):
         y_out = self.model.predict(x, batch_size=self.batch_size)
@@ -199,14 +200,14 @@ class RegressorDNN(object):
                     output = np.expand_dims(output, 1)
                 output = y_scaler.inverse_transform(output)
             dropout_mu[i] = output
-        
+
         # # Calculating mean across multiple MCD forward passes
         # mu = np.mean(dropout_mu, axis=0)  # shape (n_samples, n_classes)
         # # Calculating variance across multiple MCD forward passes
         # var = np.var(dropout_mu, axis=0)  # shape (n_samples, n_classes)
 
         return dropout_mu
-    
+
 
 class EvidentialRegressorDNN(object):
     """
@@ -385,6 +386,11 @@ class EvidentialRegressorDNN(object):
             self.model, os.path.join(self.save_path, self.model_name), save_format="h5"
         )
         return
+    
+    def load_model(self, input_shape, output_shape, weights_path):
+        self.build_neural_network(input_shape, output_shape)
+        self.model.load_weights(weights_path)
+        return
 
     def predict(self, x, scaler=None):
         y_out = self.model.predict(x, batch_size=self.batch_size)
@@ -513,7 +519,7 @@ class GaussianRegressorDNN(EvidentialRegressorDNN):
         for i in range(aleatoric.shape[-1]):
             aleatoric[:, i] *= self.training_var[i]
         return mu, aleatoric
-    
+
     def predict_monte_carlo(self, x_test, y_test, forward_passes, y_scaler=None):
         """Function to get the monte-carlo samples and uncertainty estimates
         through multiple forward passes
@@ -538,12 +544,11 @@ class GaussianRegressorDNN(EvidentialRegressorDNN):
 
         for i in range(forward_passes):
             output = self.model(x_test, training=True)
-            mu, aleatoric  = self.calc_uncertainties(output.numpy(), y_scaler)
-            dropout_mu[i] = mu 
-            dropout_aleatoric[i] = aleatoric 
+            mu, aleatoric = self.calc_uncertainties(output.numpy(), y_scaler)
+            dropout_mu[i] = mu
+            dropout_aleatoric[i] = aleatoric
 
         return dropout_mu, dropout_aleatoric
-
 
 
 class CategoricalDNN(object):
@@ -757,10 +762,19 @@ class CategoricalDNN(object):
             )
         return history
 
+    def load_model(self, input_shape, output_shape, weights_path):
+        self.build_neural_network(input_shape, output_shape)
+        self.model.load_weights(weights_path)
+        return
+
+    def save_model(self, weights_path):
+        tf.keras.models.save_model(self.model, weights_path, save_format="h5")
+        return
+
     def predict(self, x):
         y_prob = self.model.predict(x, batch_size=self.batch_size, verbose=self.verbose)
         return y_prob
-    
+
     def predict_proba(self, x):
         y_prob = self.model.predict(x, batch_size=self.batch_size, verbose=self.verbose)
         return y_prob

@@ -3,7 +3,7 @@ import subprocess
 import yaml
 
 
-def launch_pbs_jobs(config_file, trainer_path):
+def launch_pbs_jobs(config_file, trainer_path, args = ''):
     # Load configuration file
     with open(config_file, "r") as f:
         config = yaml.safe_load(f)
@@ -25,7 +25,7 @@ def launch_pbs_jobs(config_file, trainer_path):
     #PBS -o {os.path.join(save_path, "out")}
     #PBS -e {os.path.join(save_path, "out")}
     {config['pbs']['env_setup']}
-    python {trainer_path} -c {config_file}
+    python {trainer_path} -c {config_file} {args}
     """
 
     # Write PBS script to file
