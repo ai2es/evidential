@@ -178,7 +178,7 @@ class RegressorDNN(object):
             self.model, os.path.join(self.save_path, self.model_name), save_format="h5"
         )
         return
-    
+
     def load_model(self, input_shape, output_shape, weights_path):
         self.build_neural_network(input_shape, output_shape)
         self.model.load_weights(weights_path)
@@ -386,7 +386,7 @@ class EvidentialRegressorDNN(object):
             self.model, os.path.join(self.save_path, self.model_name), save_format="h5"
         )
         return
-    
+
     def load_model(self, input_shape, output_shape, weights_path):
         self.build_neural_network(input_shape, output_shape)
         self.model.load_weights(weights_path)

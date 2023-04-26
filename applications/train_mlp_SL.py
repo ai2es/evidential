@@ -1,10 +1,7 @@
 import logging
-import tqdm
-
 from echo.src.base_objective import BaseObjective
 import copy
 import yaml
-import shutil
 import sys
 import os
 import gc
@@ -43,8 +40,10 @@ class Objective(BaseObjective):
             del conf["callbacks"]["CSVLogger"]
         if "ModelCheckpoint" in conf["callbacks"]:
             del conf["callbacks"]["ModelCheckpoint"]
-        # Only use 1 data split
+        # Only use 1 split
         conf["data"]["n_splits"] = 1
+        conf["ensemble"]["n_models"] = 1
+        conf["ensemble"]["monte_carlo_passes"] = 0
 
         try:
             return trainer(conf, trial=trial)
@@ -53,7 +52,7 @@ class Objective(BaseObjective):
             raise optuna.TrialPruned()
 
 
-def trainer(conf, trial=False):
+def trainer(conf, trial=False, mode="single"):
     # load seed from the config and set globally
     seed = conf["seed"]
     seed_everything(seed)
@@ -61,8 +60,11 @@ def trainer(conf, trial=False):
     save_loc = conf["save_loc"]
     data_params = conf["data"]
     training_metric = conf["training_metric"]
-    monte_carlo_passes = conf["monte_carlo_passes"]
-    n_models = conf["n_models"]
+
+    # ensemble parameters
+    monte_carlo_passes = conf["ensemble"]["monte_carlo_passes"]
+    n_models = conf["ensemble"]["n_models"]
+    n_splits = conf["ensemble"]["n_splits"]
 
     model_params = conf["model"]
     model_params["save_path"] = os.path.join(save_loc, "models")
@@ -72,20 +74,31 @@ def trainer(conf, trial=False):
     data["day"] = data["Time"].apply(lambda x: str(x).split(" ")[0])
 
     split_col = data_params["split_col"]
-    n_splits = data_params["n_splits"]
     input_cols = data_params["input_cols"]
     output_cols = data_params["output_cols"]
 
-    # Make some directories
-    for super_dir in ["ensemble", "monte_carlo"]:  # seed
-        os.makedirs(os.path.join(save_loc, super_dir), exist_ok=True)
-        os.makedirs(os.path.join(save_loc, f"{super_dir}/models"), exist_ok=True)
-        os.makedirs(os.path.join(save_loc, f"{super_dir}/metrics"), exist_ok=True)
-        os.makedirs(os.path.join(save_loc, f"{super_dir}/evaluate"), exist_ok=True)
+    # Make some directories if ECHO is not running
+    # if monte_carlo_passes > 1:
+    #     os.makedirs(os.path.join(save_loc, "monte_carlo/metrics"), exist_ok=True)
+    #     os.makedirs(os.path.join(save_loc, "monte_carlo/evaluate"), exist_ok=True)
+    if trial is False:  # Dont create directories if ECHO is running
+        os.makedirs(os.path.join(save_loc, mode), exist_ok=True)
+        os.makedirs(os.path.join(save_loc, f"{mode}/models"), exist_ok=True)
+        os.makedirs(os.path.join(save_loc, f"{mode}/metrics"), exist_ok=True)
+        os.makedirs(os.path.join(save_loc, f"{mode}/evaluate"), exist_ok=True)
+
+        if not os.path.isfile(os.path.join(save_loc, f"{mode}/models", "model.yml")):
+            with open(
+                os.path.join(save_loc, f"{mode}/models", "model.yml"), "w"
+            ) as fid:
+                yaml.dump(conf, fid)
 
     # Need the same test_data for all trained models (data and model ensembles)
     gsp = load_splitter(
-        data_params["splitter"], n_splits=1, random_state=seed, train_size=0.9
+        data_params["splitter"],
+        n_splits=1,
+        random_state=seed,
+        train_size=data_params["train_size"],
     )
     splits = list(gsp.split(data, groups=data[split_col]))
     train_index, test_index = splits[0]
@@ -97,9 +110,9 @@ def trainer(conf, trial=False):
     # Save arrays for ensembles
     ensemble_mu = np.zeros((n_models, _test_data.shape[0], len(output_cols)))
     ensemble_sigma = np.zeros((n_models, _test_data.shape[0], len(output_cols)))
-    
+
     best_model = None
-    best_data_split = None
+    # best_data_split = None
     best_model_score = 1e10
 
     for model_seed in range(n_models):
@@ -116,14 +129,16 @@ def trainer(conf, trial=False):
         # Train ensemble of parametric models
         _ensemble_pred = np.zeros((n_splits, _test_data.shape[0], len(output_cols)))
 
-        if n_models > 1: 
+        if n_models > 1:
             # If only looping over data splits, the model is called below
             # Otherwise we call it here so it can be copied (same random seed)
             _model = RegressorDNN(**model_params)
             # build the model here so the weights are initialized (and can be copied below)
-            _model.build_neural_network(_train_data[input_cols].values, _train_data[output_cols].values)
+            _model.build_neural_network(
+                _train_data[input_cols].values, _train_data[output_cols].values
+            )
 
-        # Create ensemble from n_splits number of data splits 
+        # Create ensemble from n_splits number of data splits
         for data_seed in range(n_splits):
 
             # select indices from the split, data splits
@@ -157,21 +172,15 @@ def trainer(conf, trial=False):
             # duplicate the model (same seed)
             model = RegressorDNN(**model_params)
             model.build_neural_network(x_train, y_train)
-            if n_models > 1: # duplicate the model (same seed)
+            if n_models > 1:  # duplicate the model (same seed)
                 model.model.set_weights(_model.model.get_weights())
-
-            # callbacks
-            if n_splits > 1:
-                callbacks = get_callbacks(conf, path_extend="ensemble/models")
-            else:
-                callbacks = get_callbacks(conf, path_extend="monte_carlo/models")
 
             # fit the model
             model.fit(
                 x_train,
                 y_train,
                 validation_data=(x_valid, y_valid),
-                callbacks=callbacks,
+                callbacks=get_callbacks(conf, path_extend=f"{mode}/models"),
             )
             history = model.model.history
 
@@ -186,7 +195,7 @@ def trainer(conf, trial=False):
             # Save if its the best model
             if min(history.history[training_metric]) < best_model_score:
                 best_model = model
-                #best_data_split = data_seed
+                # best_data_split = data_seed
                 model.model_name = "best.h5"
                 model.save_model()
 
@@ -200,19 +209,58 @@ def trainer(conf, trial=False):
             tf.keras.backend.clear_session()
             gc.collect()
 
-        if n_splits > 1:
+        if mode in ["data", "ensemble"]:
             # Compute uncertainties for the data ensemble
             ensemble_mu[model_seed] = np.mean(_ensemble_pred, 0)
             ensemble_sigma[model_seed] = np.var(_ensemble_pred, 0)
-        else:
+
+        elif monte_carlo_passes > 0:  # mode = seed or single
             # Create ensemble from MC dropout
             dropout_mu = best_model.predict_monte_carlo(
                 x_test, y_test, forward_passes=monte_carlo_passes, y_scaler=y_scaler
             )
             # Calculating mean across multiple MCD forward passes
-            ensemble_mu[model_seed] = np.mean(dropout_mu, axis=0)  # shape (n_samples, n_classes)
+            ensemble_mu[model_seed] = np.mean(
+                dropout_mu, axis=0
+            )  # shape (n_samples, n_classes)
             # Calculating variance across multiple MCD forward passes
-            ensemble_sigma[model_seed] = np.var(dropout_mu, axis=0)  # shape (n_samples, n_classes)
+            ensemble_sigma[model_seed] = np.var(
+                dropout_mu, axis=0
+            )  # shape (n_samples, n_classes)
+
+        else:  # mode = seed or single
+            ensemble_mu[model_seed] = _ensemble_pred[0]
+
+    if mode == "data" and monte_carlo_passes > 0:
+        # Create ensemble from MC dropout
+        dropout_mu = best_model.predict_monte_carlo(
+            x_test, y_test, forward_passes=monte_carlo_passes, y_scaler=y_scaler
+        )
+        # Calculating mean across multiple MCD forward passes
+        ensemble_mu[model_seed] = np.mean(
+            dropout_mu, axis=0
+        )  # shape (n_samples, n_classes)
+        # Calculating variance across multiple MCD forward passes
+        ensemble_sigma[model_seed] = np.var(
+            dropout_mu, axis=0
+        )  # shape (n_samples, n_classes)
+
+    # If we have not created an ensemble, we are finished.
+    if mode == "single":
+        _test_data[[f"{x}_pred" for x in output_cols]] = ensemble_mu[0]
+        _test_data.to_csv(os.path.join(save_loc, f"{mode}/evaluate", "test.csv"))
+        return 1.0
+
+    # We only created ensemble over model or seed but not both and no MC dropout
+    if mode in ["model", "seed"] and (monte_carlo_passes == 0):
+        _test_data[[f"{x}_ensemble_pred" for x in output_cols]] = np.mean(
+            _ensemble_pred, 0
+        )
+        _test_data[[f"{x}_ensemble_var" for x in output_cols]] = np.var(
+            _ensemble_pred, 0
+        )
+        _test_data.to_csv(os.path.join(save_loc, f"{mode}/evaluate", "test.csv"))
+        return 1.0
 
     # Compute aleatoric and epistemic uncertainties using law of total uncertainty
     ensemble_mean = np.mean(ensemble_mu, 0)
@@ -225,26 +273,17 @@ def trainer(conf, trial=False):
     _test_data[[f"{x}_ensemble_epi" for x in output_cols]] = ensemble_epistemic
 
     # make some figures
-    if n_splits > 1:
-        _test_data.to_csv(os.path.join(save_loc, "ensemble/evaluate", "test.csv"))
-        compute_results(
-            _test_data,
-            output_cols,
-            ensemble_mean,
-            ensemble_aleatoric,
-            ensemble_epistemic,
-            fn=os.path.join(save_loc, "ensemble/metrics"),
-        )
-    else:
-        _test_data.to_csv(os.path.join(save_loc, "monte_carlo/evaluate", "test.csv"))
-        compute_results(
-            _test_data,
-            output_cols,
-            ensemble_mean,
-            ensemble_aleatoric,
-            ensemble_epistemic,
-            fn=os.path.join(save_loc, "monte_carlo/metrics"),
-        )
+    _test_data.to_csv(os.path.join(save_loc, f"{mode}/evaluate", "test.csv"))
+    compute_results(
+        _test_data,
+        output_cols,
+        ensemble_mean,
+        ensemble_aleatoric,
+        ensemble_epistemic,
+        fn=os.path.join(save_loc, f"{mode}/metrics"),
+    )
+
+    return 1.0
 
 
 if __name__ == "__main__":
@@ -286,11 +325,26 @@ if __name__ == "__main__":
     save_loc = conf["save_loc"]
     os.makedirs(save_loc, exist_ok=True)
 
-    if not os.path.isfile(os.path.join(save_loc, "model.yml")):
-        shutil.copyfile(config, os.path.join(save_loc, "model.yml"))
+    # Load the "ensemble" details fron the config
+    n_models = conf["ensemble"]["n_models"]
+    n_splits = conf["ensemble"]["n_splits"]
+    monte_carlo_passes = conf["ensemble"]["monte_carlo_passes"]
+    modes = []
+    if n_splits > 1 and n_models == 1:
+        mode = "data"
+    elif n_splits == 1 and n_models > 1:
+        mode = "seed"
+    if n_splits == 1 and n_models == 1:
+        mode = "single"
+    elif n_splits > 1 and n_models > 1:
+        mode = "ensemble"
     else:
-        with open(os.path.join(save_loc, "model.yml"), "w") as fid:
-            yaml.dump(conf, fid)
+        raise ValueError(
+            "Incorrect selection of n_splits or n_models. Both must be at greater than or equal to 1."
+        )
+    logger.info(
+        f"Running with ensemble mode: {mode} with n_splits: {n_splits}, n_models: {n_models}, mc_steps: {monte_carlo_passes}"
+    )
 
     if launch:
         from pathlib import Path

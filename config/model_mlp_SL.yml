@@ -1,8 +1,12 @@
 seed: 1000
-save_loc: "/glade/work/schreck/repos/evidential/main/results/surface_layer/mlp"
+save_loc: "/glade/work/schreck/repos/evidential/main/results/production/surface_layer/mlp"
 training_metric: "val_mae"
-monte_carlo_passes: 50 # only works if data:n_splits = 1
-n_models: 20
+direction: "min"
+
+ensemble:
+    n_models: 10
+    n_splits: 10
+    monte_carlo_passes: 50
 
 data:
     save_loc: "/glade/p/cisl/aiml/ai2es/surfacelayer/cabauw_derived_data_20210720.csv"
@@ -19,7 +23,7 @@ data:
     ]
     splitter: "GroupShuffleSplit"
     scaler_x:
-        type: "robust"
+        type: "quantile"
         params:
             copy: true
             with_mean: true
@@ -31,19 +35,19 @@ data:
             with_mean: true
             with_std: true
     split_col: "day"
-    n_splits: 20
+    train_size: 0.9
 
 model:
-    hidden_layers: 1
-    hidden_neurons: 4500
+    hidden_layers: 2
+    hidden_neurons: 4368
     activation: "relu"
     optimizer: "adam"
     metrics: "mae"
-    lr: 0.00001
+    lr: 0.0004727390951751
     kernel_reg: 'l2'
     l1_weight: 0.0
-    l2_weight: 0.0
-    batch_size: 256
+    l2_weight: 3.811291842127919e-06
+    batch_size: 2981
     use_noise: False
     use_dropout: True
     dropout_alpha: 0.2
@@ -78,7 +82,7 @@ callbacks:
     verbose: 0
     
 pbs:
-  name: mlp-en
+  name: mlp-prod
   select: 1
   ncpus: 8
   ngpus: 1
