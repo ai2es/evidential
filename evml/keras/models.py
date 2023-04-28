@@ -179,9 +179,9 @@ class RegressorDNN(object):
         )
         return
 
-    def load_model(self, input_shape, output_shape, weights_path):
-        self.build_neural_network(input_shape, output_shape)
-        self.model.load_weights(weights_path)
+    def load_model(self, model_path=False):
+        model_path = os.path.join(self.save_path, self.model_name) if not model_path else model_path
+        self.model = tf.keras.models.load_model(model_path)
         return
 
     def predict(self, x, scaler=None):
@@ -200,12 +200,6 @@ class RegressorDNN(object):
                     output = np.expand_dims(output, 1)
                 output = y_scaler.inverse_transform(output)
             dropout_mu[i] = output
-
-        # # Calculating mean across multiple MCD forward passes
-        # mu = np.mean(dropout_mu, axis=0)  # shape (n_samples, n_classes)
-        # # Calculating variance across multiple MCD forward passes
-        # var = np.var(dropout_mu, axis=0)  # shape (n_samples, n_classes)
-
         return dropout_mu
 
 
@@ -387,9 +381,9 @@ class EvidentialRegressorDNN(object):
         )
         return
 
-    def load_model(self, input_shape, output_shape, weights_path):
-        self.build_neural_network(input_shape, output_shape)
-        self.model.load_weights(weights_path)
+    def load_model(self, model_path=False):
+        model_path = os.path.join(self.save_path, self.model_name) if not model_path else model_path
+        self.model = tf.keras.models.load_model(model_path)
         return
 
     def predict(self, x, scaler=None):
@@ -762,13 +756,17 @@ class CategoricalDNN(object):
             )
         return history
 
-    def load_model(self, input_shape, output_shape, weights_path):
-        self.build_neural_network(input_shape, output_shape)
-        self.model.load_weights(weights_path)
+    # def load_model(self, input_shape, output_shape, weights_path):
+    #     self.build_neural_network(input_shape, output_shape)
+    #     self.model.load_weights(weights_path)
+    #     return
+    
+    def load_model(self, model_path):
+        self.model = tf.keras.models.load_model(model_path)
         return
 
-    def save_model(self, weights_path):
-        tf.keras.models.save_model(self.model, weights_path, save_format="h5")
+    def save_model(self, model_path):
+        tf.keras.models.save_model(self.model, model_path, save_format="h5")
         return
 
     def predict(self, x):

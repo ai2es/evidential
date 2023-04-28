@@ -76,16 +76,15 @@ def trainer(conf, trial=False, mode="single"):
     split_col = data_params["split_col"]
     input_cols = data_params["input_cols"]
     output_cols = data_params["output_cols"]
-
-    # Make some directories if ECHO is not running
-    # if monte_carlo_passes > 1:
-    #     os.makedirs(os.path.join(save_loc, "monte_carlo/metrics"), exist_ok=True)
-    #     os.makedirs(os.path.join(save_loc, "monte_carlo/evaluate"), exist_ok=True)
-    if trial is False:  # Dont create directories if ECHO is running
+    
+    if trial is False:  # Create directories if ECHO is NOT running
         os.makedirs(os.path.join(save_loc, mode), exist_ok=True)
         os.makedirs(os.path.join(save_loc, f"{mode}/models"), exist_ok=True)
         os.makedirs(os.path.join(save_loc, f"{mode}/metrics"), exist_ok=True)
         os.makedirs(os.path.join(save_loc, f"{mode}/evaluate"), exist_ok=True)
+        # Update where the best model will be saved
+        conf["model"]["save_path"] = os.path.join(save_loc, f"{mode}/models")
+        conf["model"]["model_name"] = "best.h5"
 
         if not os.path.isfile(os.path.join(save_loc, f"{mode}/models", "model.yml")):
             with open(
@@ -108,8 +107,12 @@ def trainer(conf, trial=False, mode="single"):
     )
 
     # Save arrays for ensembles
-    ensemble_mu = np.zeros((n_models, _test_data.shape[0], len(output_cols)))
-    ensemble_sigma = np.zeros((n_models, _test_data.shape[0], len(output_cols)))
+    if n_models > 1:
+        ensemble_mu = np.zeros((n_models, _test_data.shape[0], len(output_cols)))
+        ensemble_sigma = np.zeros((n_models, _test_data.shape[0], len(output_cols)))
+    else:
+        ensemble_mu = np.zeros((n_splits, _test_data.shape[0], len(output_cols)))
+        ensemble_sigma = np.zeros((n_splits, _test_data.shape[0], len(output_cols)))
 
     best_model = None
     # best_data_split = None
@@ -195,26 +198,38 @@ def trainer(conf, trial=False, mode="single"):
             # Save if its the best model
             if min(history.history[training_metric]) < best_model_score:
                 best_model = model
-                # best_data_split = data_seed
-                model.model_name = "best.h5"
+                best_data_split = data_seed
                 model.save_model()
 
             # evaluate on the test holdout split
             _ensemble_pred[data_seed] = y_scaler.inverse_transform(
                 model.predict(x_test)
             )
+            
+            if mode == "data" and monte_carlo_passes > 0:
+                #elif monte_carlo_passes > 0:  # mode = seed or single
+                # Create ensemble from MC dropout
+                dropout_mu = model.predict_monte_carlo(
+                    x_test, y_test, forward_passes=monte_carlo_passes, y_scaler=y_scaler
+                )
+                # Calculating mean across multiple MCD forward passes
+                # shape (n_samples, n_classes)
+                ensemble_mu[data_seed] = np.mean(dropout_mu, axis=0)  
+                # Calculating variance across multiple MCD forward passes
+                # shape (n_samples, n_classes)
+                ensemble_sigma[data_seed] = np.var(dropout_mu, axis=0)  
 
-            # check if this is the best model
             del model
             tf.keras.backend.clear_session()
             gc.collect()
 
-        if mode in ["data", "ensemble"]:
+        if mode == "ensemble":
             # Compute uncertainties for the data ensemble
             ensemble_mu[model_seed] = np.mean(_ensemble_pred, 0)
             ensemble_sigma[model_seed] = np.var(_ensemble_pred, 0)
-
-        elif monte_carlo_passes > 0:  # mode = seed or single
+            
+        elif mode == "seed" and monte_carlo_passes > 0:
+            #elif monte_carlo_passes > 0:  # mode = seed or single
             # Create ensemble from MC dropout
             dropout_mu = best_model.predict_monte_carlo(
                 x_test, y_test, forward_passes=monte_carlo_passes, y_scaler=y_scaler
@@ -228,22 +243,8 @@ def trainer(conf, trial=False, mode="single"):
                 dropout_mu, axis=0
             )  # shape (n_samples, n_classes)
 
-        else:  # mode = seed or single
+        elif mode == "single":  # mode = seed or single
             ensemble_mu[model_seed] = _ensemble_pred[0]
-
-    if mode == "data" and monte_carlo_passes > 0:
-        # Create ensemble from MC dropout
-        dropout_mu = best_model.predict_monte_carlo(
-            x_test, y_test, forward_passes=monte_carlo_passes, y_scaler=y_scaler
-        )
-        # Calculating mean across multiple MCD forward passes
-        ensemble_mu[model_seed] = np.mean(
-            dropout_mu, axis=0
-        )  # shape (n_samples, n_classes)
-        # Calculating variance across multiple MCD forward passes
-        ensemble_sigma[model_seed] = np.var(
-            dropout_mu, axis=0
-        )  # shape (n_samples, n_classes)
 
     # If we have not created an ensemble, we are finished.
     if mode == "single":
@@ -329,12 +330,13 @@ if __name__ == "__main__":
     n_models = conf["ensemble"]["n_models"]
     n_splits = conf["ensemble"]["n_splits"]
     monte_carlo_passes = conf["ensemble"]["monte_carlo_passes"]
-    modes = []
+
+    # How is this script supposed to run?
     if n_splits > 1 and n_models == 1:
         mode = "data"
     elif n_splits == 1 and n_models > 1:
         mode = "seed"
-    if n_splits == 1 and n_models == 1:
+    elif n_splits == 1 and n_models == 1:
         mode = "single"
     elif n_splits > 1 and n_models > 1:
         mode = "ensemble"
@@ -354,4 +356,4 @@ if __name__ == "__main__":
         launch_pbs_jobs(config, script_path)
         sys.exit()
 
-    result = trainer(conf)
+    result = trainer(conf, mode=mode)

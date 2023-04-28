@@ -163,7 +163,10 @@ def trainer(conf, trial=False):
 
         # If ECHO is running this script, n_splits has been set to 1, return the metric here
         if trial is not False:
-            return {training_metric: optimization_metric}
+            return {
+                training_metric: optimization_metric, 
+                "val_mae": min(history.history["val_mae"])
+            }
 
         # Write to the logger
         logger.info(

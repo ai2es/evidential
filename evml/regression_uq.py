@@ -174,6 +174,10 @@ def plot_uncertainties(
         # Calculate the mean prediction for the current column
         aleatoric = ale[:, i]
         epistemic = epi[:, i]
+        
+        # Remove any NaNs
+        aleatoric = aleatoric[np.isfinite(aleatoric)]
+        epistemic = epistemic[np.isfinite(epistemic)]
 
         # Create the 2D histogram plot
         my_range = [
@@ -379,8 +383,10 @@ def plot_skill_score(
         for i, std in enumerate([y_ale, y_epi, y_tot]):
 
             # Compute the skill score
+            not_nan = np.isfinite(y_pred[:, j]) & np.isfinite(std[:, j])
+            
             ss, counts, bins = compute_skill_score(
-                y_true[:, j], y_pred[:, j], std[:, j], num_bins
+                y_true[:, j][not_nan], y_pred[:, j][not_nan], std[:, j][not_nan], num_bins
             )
 
             # Compute bin centers

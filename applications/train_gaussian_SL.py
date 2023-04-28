@@ -93,10 +93,13 @@ def trainer(conf, trial=False, mode="single"):
         os.makedirs(os.path.join(save_loc, f"{mode}/models"), exist_ok=True)
         os.makedirs(os.path.join(save_loc, f"{mode}/metrics"), exist_ok=True)
         os.makedirs(os.path.join(save_loc, f"{mode}/evaluate"), exist_ok=True)
-
-    if not os.path.isfile(os.path.join(save_loc, f"{mode}/models", "model.yml")):
-        with open(os.path.join(save_loc, f"{mode}/models", "model.yml"), "w") as fid:
-            yaml.dump(conf, fid)
+        # Update where the best model will be saved
+        conf["model"]["save_path"] = os.path.join(save_loc, f"{mode}/models")
+        conf["model"]["model_name"] = "best.h5"
+        
+        if not os.path.isfile(os.path.join(save_loc, f"{mode}/models", "model.yml")):
+            with open(os.path.join(save_loc, f"{mode}/models", "model.yml"), "w") as fid:
+                yaml.dump(conf, fid)
 
     # Need the same test_data for all trained models (data and model ensembles)
     gsp = load_splitter(
@@ -119,8 +122,12 @@ def trainer(conf, trial=False, mode="single"):
     splits = list(gsp.split(_train_data, groups=_train_data[split_col]))
 
     # Train ensemble of parametric models
-    ensemble_mu = np.zeros((n_splits, _test_data.shape[0], len(output_cols)))
-    ensemble_var = np.zeros((n_splits, _test_data.shape[0], len(output_cols)))
+    if mode == "seed":
+        ensemble_mu = np.zeros((n_models, _test_data.shape[0], len(output_cols)))
+        ensemble_var = np.zeros((n_models, _test_data.shape[0], len(output_cols)))
+    else:
+        ensemble_mu = np.zeros((n_splits, _test_data.shape[0], len(output_cols)))
+        ensemble_var = np.zeros((n_splits, _test_data.shape[0], len(output_cols)))
 
     best_model = None
     best_data_split = None
@@ -217,7 +224,10 @@ def trainer(conf, trial=False, mode="single"):
 
             # If ECHO is running this script, n_splits has been set to 1, return the metric here
             if trial is not False:
-                return {training_metric: optimization_metric}
+                return {
+                    training_metric: optimization_metric, 
+                    "val_mae": min(history.history["val_mae"])
+                }
             
             # Write to the logger
             logger.info(
@@ -240,8 +250,13 @@ def trainer(conf, trial=False, mode="single"):
             if mu.shape[-1] == 1:
                 mu = np.expand_dims(mu)
                 aleatoric = np.expand_dims(aleatoric, 1)
-            ensemble_mu[data_seed] = mu
-            ensemble_var[data_seed] = aleatoric
+            
+            if mode == "seed":
+                ensemble_mu[model_seed] = mu
+                ensemble_var[model_seed] = aleatoric
+            else:
+                ensemble_mu[data_seed] = mu
+                ensemble_var[data_seed] = aleatoric
 
             # Save the ensemble member df
             _test_data[[f"{x}_pred" for x in output_cols]] = mu
