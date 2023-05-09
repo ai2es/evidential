@@ -737,7 +737,7 @@ class CategoricalDNN(object):
                 callbacks=self.callbacks,
                 shuffle=True,
             )
-        else:
+        elif self.loss_weights is not None:
             sample_weight = np.array([self.loss_weights[np.argmax(_)] for _ in y_train])
             if not self.steps_per_epoch:
                 self.steps_per_epoch = sample_weight.shape[0] // self.batch_size
@@ -753,6 +753,20 @@ class CategoricalDNN(object):
                 steps_per_epoch=self.steps_per_epoch,
                 # class_weight={k: v for k, v in enumerate(self.loss_weights)},
                 shuffle=True,
+            )
+        else:
+            #if not self.steps_per_epoch:
+            #    self.steps_per_epoch = sample_weight.shape[0] // self.batch_size
+            history = self.model.fit(
+                x=x_train,
+                y=y_train,
+                validation_data=validation_data,
+                batch_size=self.batch_size,
+                epochs=self.epochs,
+                verbose=self.verbose,
+                callbacks=self.callbacks,
+                #steps_per_epoch=self.steps_per_epoch,
+                shuffle=True
             )
         return history
 

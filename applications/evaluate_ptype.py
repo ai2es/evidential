@@ -19,7 +19,6 @@ from ptype.plotting import (
     plot_confusion_matrix,
     coverage_figures,
 )
-from evml.metrics import compute_results_categorical
 from evml.classifier_uq import uq_results
 
 from hagelslag.evaluation.ProbabilityMetrics import DistributedROC
@@ -73,8 +72,10 @@ def evaluate(conf, reevaluate=False):
         for name in ["test"]:
             ensemble_p = np.zeros((n_splits, data[name].shape[0]))
             ensemble_std = np.zeros((n_splits, data[name].shape[0]))
-            ensemble_entropy = np.zeros((n_splits, data[name].shape[0]))
-            ensemble_mutual = np.zeros((n_splits, data[name].shape[0]))
+
+            if conf["model"]["loss"] == "categorical_crossentropy":
+                ensemble_entropy = np.zeros((n_splits, data[name].shape[0]))
+                ensemble_mutual = np.zeros((n_splits, data[name].shape[0]))
 
             # Loop over ensemble of parametric models
             for split in range(n_splits):
@@ -82,16 +83,20 @@ def evaluate(conf, reevaluate=False):
                     os.path.join(save_loc, "evaluate", f"{name}_{split}.parquet")
                 )
                 ensemble_p[split] = dfe["pred_conf"]
-                ensemble_std[split] = dfe["epistemic"]
-                ensemble_entropy[split] = dfe["entropy"]
-                ensemble_mutual[split] = dfe["mutual_info"]
+                if "epistemic" in dfe:
+                    ensemble_std[split] = dfe["epistemic"]
+                    if conf["model"]["loss"] == "categorical_crossentropy":
+                        ensemble_entropy[split] = dfe["entropy"]
+                        ensemble_mutual[split] = dfe["mutual_info"]
 
             # Compute averages, uncertainties
             data[name]["ave_conf"] = np.mean(ensemble_p, axis=0)
-            data[name]["ave_entropy"] = np.mean(ensemble_entropy, axis=0)
-            data[name]["ave_mutual_info"] = np.mean(ensemble_mutual, axis=0)
-            data[name]["epistemic"] = np.var(ensemble_p, axis=0)
             data[name]["aleatoric"] = np.mean(ensemble_std, axis=0)
+            if "epistemic" in dfe:
+                data[name]["epistemic"] = np.var(ensemble_p, axis=0)
+                if conf["model"]["loss"] == "categorical_crossentropy":
+                    data[name]["ave_entropy"] = np.mean(ensemble_entropy, axis=0)
+                    data[name]["ave_mutual_info"] = np.mean(ensemble_mutual, axis=0)
 
     # Compute categorical metrics
     metrics = defaultdict(list)
@@ -114,8 +119,43 @@ def evaluate(conf, reevaluate=False):
     plot_confusion_matrix(
         data,
         labels,
+        axis=1,
         normalize=True,
-        save_location=os.path.join(save_loc, "plots", "confusion_matrices.pdf"),
+        save_location=os.path.join(save_loc, "plots", "confusion_matrices_axis1.pdf"),
+    )
+    plot_confusion_matrix(
+        data,
+        labels,
+        axis=0,
+        normalize=True,
+        save_location=os.path.join(save_loc, "plots", "confusion_matrices_axis0.pdf"),
+    )
+
+    test_days = [day for case in conf["case_studies"].values() for day in case]
+    test_days_c = data["test"]["day"].isin(test_days)
+
+    test_data = {
+        "test": data["test"][~test_days_c],
+        "cases": data["test"][test_days_c],
+    }
+
+    plot_confusion_matrix(
+        test_data,
+        labels,
+        axis=1,
+        normalize=True,
+        save_location=os.path.join(
+            save_loc, "plots", "confusion_matrices_test_cases_axis1.pdf"
+        ),
+    )
+    plot_confusion_matrix(
+        test_data,
+        labels,
+        axis=0,
+        normalize=True,
+        save_location=os.path.join(
+            save_loc, "plots", "confusion_matrices_test_cases_axis0.pdf"
+        ),
     )
 
     # Reliability
@@ -205,21 +245,7 @@ def evaluate(conf, reevaluate=False):
             os.path.join(save_loc, "plots", f"performance_{name}.pdf"),
         )
 
-    # Sorting curves
-    for name in data.keys():
-
-        if name == "test":
-            col = "pred_conf" if n_splits == 1 else "ave_conf"
-            compute_results_categorical(
-                data[name],
-                ["pred_conf1", "pred_conf2", "pred_conf3", "pred_conf4"],
-                ["true_label"],
-                np.expand_dims(data[name][col], 1),
-                np.expand_dims(data[name]["aleatoric"], 1),
-                np.expand_dims(data[name]["epistemic"], 1),
-                fn=os.path.join(save_loc, "metrics"),
-            )
-
+        # Sorting curves
         coverage_figures(
             data[name],
             output_features,
@@ -231,7 +257,7 @@ def evaluate(conf, reevaluate=False):
 
             # UQ figures
             uq_results(
-                data[name], save_location=os.path.join(save_loc, "uq"), prefix=name
+                data[name], save_location=os.path.join(save_loc, "metrics"), prefix=name
             )
 
     # Save metrics
@@ -260,7 +286,7 @@ if __name__ == "__main__":
 
     save_loc = conf["save_loc"]
     os.makedirs(save_loc, exist_ok=True)
-    for newdir in ["plots", "uq", "metrics"]:
+    for newdir in ["plots", "metrics"]:
         os.makedirs(os.path.join(save_loc, newdir), exist_ok=True)
 
     if not os.path.isfile(os.path.join(save_loc, "model.yml")):
