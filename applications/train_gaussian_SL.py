@@ -103,8 +103,6 @@ def trainer(conf, trial=False, mode="single"):
             ) as fid:
                 yaml.dump(conf, fid)
 
-    raise
-
     # Need the same test_data for all trained models (data and model ensembles)
     gsp = load_splitter(
         data_params["splitter"],

@@ -62,54 +62,61 @@ def evaluate(conf, reevaluate=False):
         }
     else:
         best_split = locate_best_model(save_loc, conf["metric"], conf["direction"])
-        # Create symlinks for best model / scalers 
-        #if not os.path.join(save_loc, "models", f"best.h5"):
+        # Create symlinks for best model / scalers
+        # if not os.path.join(save_loc, "models", f"best.h5"):
         try:
             os.symlink(
                 os.path.join(save_loc, "models", f"model_{best_split}.h5"),
-                os.path.join(save_loc, "models", f"best.h5")
+                os.path.join(save_loc, "models", "best.h5"),
             )
             os.symlink(
                 os.path.join(save_loc, "models", f"training_log_{best_split}.csv"),
-                os.path.join(save_loc, "models", f"best_training_log.csv")
+                os.path.join(save_loc, "models", "best_training_log.csv"),
             )
         except FileExistsError:
             pass
         try:
             os.symlink(
                 os.path.join(save_loc, "scalers", f"input_{best_split}.json"),
-                os.path.join(save_loc, "scalers", f"input.json")
+                os.path.join(save_loc, "scalers", "input.json"),
             )
             os.symlink(
                 os.path.join(save_loc, "scalers", f"output_label_{best_split}.json"),
-                os.path.join(save_loc, "scalers", f"output_label.json")
+                os.path.join(save_loc, "scalers", "output_label.json"),
             )
             os.symlink(
                 os.path.join(save_loc, "scalers", f"output_onehot_{best_split}.json"),
-                os.path.join(save_loc, "scalers", f"output_onehot.json")
+                os.path.join(save_loc, "scalers", "output_onehot.json"),
             )
         except FileExistsError:
             pass
-        # Compute uncertainties with the categorical model 
+        # Compute uncertainties with the categorical model
         if conf["model"]["loss"] == "categorical_crossentropy":
             _data = {
                 name: pd.read_parquet(
                     os.path.join(save_loc, "evaluate", f"{name}_{best_split}.parquet")
-                ).index
+                )[["datetime", "lat", "lon"]]
                 for name in ["train", "val", "test"]
             }
-            data = {}
-            data["train"] = pd.concat([
-                pd.read_parquet(
-                    os.path.join(save_loc, "evaluate", f"train_{best_split}.parquet")),
-                pd.read_parquet(
-                    os.path.join(save_loc, "evaluate", f"val_{best_split}.parquet"))
-                ])
-            data["test"] = pd.read_parquet(
-                    os.path.join(save_loc, "evaluate", f"test_{best_split}.parquet"))
+            tmpdata = {}
+            tmpdata["train"] = pd.concat(
+                [
+                    pd.read_parquet(
+                        os.path.join(
+                            save_loc, "evaluate", f"train_{best_split}.parquet"
+                        )
+                    ),
+                    pd.read_parquet(
+                        os.path.join(save_loc, "evaluate", f"val_{best_split}.parquet")
+                    ),
+                ]
+            )
+            tmpdata["test"] = pd.read_parquet(
+                os.path.join(save_loc, "evaluate", f"test_{best_split}.parquet")
+            )
             # Loop over the data splits
             for name in ["train", "test"]:
-                size = data[name].shape[0]
+                size = tmpdata[name].shape[0]
                 ensemble_p = np.zeros((n_splits, size))
                 ensemble_std = np.zeros((n_splits, size))
 
@@ -121,12 +128,26 @@ def evaluate(conf, reevaluate=False):
                 for split in range(n_splits):
                     if name == "test":
                         dfe = pd.read_parquet(
-                            os.path.join(save_loc, "evaluate", f"{name}_{split}.parquet")
+                            os.path.join(
+                                save_loc, "evaluate", f"{name}_{split}.parquet"
+                            )
                         )
                     else:
-                        dfe = [pd.read_parquet(os.path.join(save_loc, "evaluate", f"train_{split}.parquet"))]
-                        dfe.append(pd.read_parquet(os.path.join(save_loc, "evaluate", f"val_{split}.parquet")))
-                        dfe = pd.concat(dfe, axis = 0)
+                        dfe = [
+                            pd.read_parquet(
+                                os.path.join(
+                                    save_loc, "evaluate", f"train_{split}.parquet"
+                                )
+                            )
+                        ]
+                        dfe.append(
+                            pd.read_parquet(
+                                os.path.join(
+                                    save_loc, "evaluate", f"val_{split}.parquet"
+                                )
+                            )
+                        )
+                        dfe = pd.concat(dfe, axis=0)
                     ensemble_p[split] = dfe["pred_conf"]
                     if "epistemic" in dfe:
                         ensemble_std[split] = dfe["epistemic"]
@@ -135,19 +156,30 @@ def evaluate(conf, reevaluate=False):
                             ensemble_mutual[split] = dfe["mutual_info"]
 
                 # Compute averages, uncertainties
-                data[name]["ave_conf"] = np.mean(ensemble_p, axis=0)
-                data[name]["aleatoric"] = np.mean(ensemble_std, axis=0)
+                tmpdata[name]["ave_conf"] = np.mean(ensemble_p, axis=0)
+                tmpdata[name]["aleatoric"] = np.mean(ensemble_std, axis=0)
                 if "epistemic" in dfe:
-                    data[name]["epistemic"] = np.var(ensemble_p, axis=0)
+                    tmpdata[name]["epistemic"] = np.var(ensemble_p, axis=0)
                     if conf["model"]["loss"] == "categorical_crossentropy":
-                        data[name]["ave_entropy"] = np.mean(ensemble_entropy, axis=0)
-                        data[name]["ave_mutual_info"] = np.mean(ensemble_mutual, axis=0)
-                    
+                        tmpdata[name]["ave_entropy"] = np.mean(ensemble_entropy, axis=0)
+                        tmpdata[name]["ave_mutual_info"] = np.mean(
+                            ensemble_mutual, axis=0
+                        )
+
             # Reindex the train / val splits according to indices from the best model
-            data["val"] = data["train"].iloc[_data["val"]].copy()
-            data["train"] = data["train"].iloc[_data["train"]].copy()
-            
-        else: # Evidential model contains the uncertainties
+            train_data = _data["train"][["datetime", "lat", "lon"]].merge(
+                tmpdata["train"], on=["datetime", "lat", "lon"], how="inner"
+            )
+            valid_data = _data["val"][["datetime", "lat", "lon"]].merge(
+                tmpdata["train"], on=["datetime", "lat", "lon"], how="inner"
+            )
+            test_data = tmpdata["test"].copy()
+
+            data = {"train": train_data, "val": valid_data, "test": test_data}
+
+            del tmpdata
+
+        else:  # Evidential model contains the uncertainties
             data = {
                 name: pd.read_parquet(
                     os.path.join(save_loc, "evaluate", f"{name}_{best_split}.parquet")
@@ -155,7 +187,6 @@ def evaluate(conf, reevaluate=False):
                 for name in ["train", "val", "test"]
             }
 
-    raise
     # Compute categorical metrics
     metrics = defaultdict(list)
     for name in data.keys():
