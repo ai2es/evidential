@@ -5,6 +5,10 @@ from collections import defaultdict
 from sklearn.metrics import brier_score_loss
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.colors as colors
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def uq_results(df, save_location=None, prefix=None):
@@ -35,6 +39,7 @@ def uq_results(df, save_location=None, prefix=None):
             x_labels=["Epistemic", "Entropy"],
             y_labels=["Aleatoric", "Total"],
             num_bins=20,
+            save_location=save_location
         )
     else:
         plot_uncertainties(
@@ -44,6 +49,7 @@ def uq_results(df, save_location=None, prefix=None):
             x_labels=["Epistemic", "Evidential"],
             y_labels=["Aleatoric", "Total"],
             num_bins=20,
+            save_location=save_location
         )
 
     # Create reliability diagrams for each class
@@ -178,16 +184,19 @@ def plot_uncertainties(
     if legend_cols is None:
         legend_cols = output_cols
 
+    not_nan = np.isfinite(df[input_cols + output_cols])
+    df = df[not_nan].copy()
+    
     # Loop over each element in output_cols and create a hexbin plot
     for i, (i_col, o_col) in enumerate(zip(input_cols, output_cols)):
         # Calculate the mean prediction for the current column
-        y_array = df[i_col]
-        x_array = df[o_col]
+        y_array = df[i_col].copy()
+        x_array = df[o_col].copy()
 
         # Create the 2D histogram plot
         my_range = [
-            [np.percentile(x_array, 5), np.percentile(x_array, 95)],
-            [np.percentile(y_array, 5), np.percentile(y_array, 95)],
+            [np.nanpercentile(x_array, 5), np.nanpercentile(x_array, 95)],
+            [np.nanpercentile(y_array, 5), np.nanpercentile(y_array, 95)],
         ]
         hb = axs[i].hist2d(
             x_array,

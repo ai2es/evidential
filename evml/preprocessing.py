@@ -21,9 +21,15 @@ def load_preprocessor(stype, params, seed = 1000):
             random_state=seed, 
             output_distribution = "normal"
         )
+    elif stype == "quantile-uniform":
+        return QuantileTransformer(
+            n_quantiles=1000, 
+            random_state=seed, 
+            output_distribution = "uniform"
+        )
     else:
         raise ValueError(
-            "Preprocessing type not recognized. Select from standard, normalize, symmetric, robust, or quantile"
+            "Preprocessing type not recognized. Select from standard, normalize, symmetric, robust, quantile, or quantile-uniform"
         )
 
 def load_preprocessing(conf, seed = 1000):

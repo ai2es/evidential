@@ -1,6 +1,4 @@
 import logging
-import tqdm
-
 from echo.src.base_objective import BaseObjective
 import copy
 import yaml
@@ -15,8 +13,7 @@ import tensorflow as tf
 from argparse import ArgumentParser
 
 from keras import backend as K
-from evml.pit import pit_deviation_skill_score
-from evml.keras.models import GaussianRegressorDNN
+from evml.keras.models import RegressorDNN
 from evml.keras.callbacks import get_callbacks
 from evml.splitting import load_splitter
 from evml.regression_uq import compute_results
@@ -43,12 +40,10 @@ class Objective(BaseObjective):
             del conf["callbacks"]["CSVLogger"]
         if "ModelCheckpoint" in conf["callbacks"]:
             del conf["callbacks"]["ModelCheckpoint"]
-        # Only use 1 data split and 1 model (one model seed)
-        conf["ensemble"]["n_splits"] = 1
+        # Only use 1 split
+        conf["data"]["n_splits"] = 1
         conf["ensemble"]["n_models"] = 1
         conf["ensemble"]["monte_carlo_passes"] = 0
-        # Skip MC dropout
-        conf["monte_carlo_passes"] = 0
 
         try:
             return trainer(conf, trial=trial)
@@ -65,7 +60,6 @@ def trainer(conf, trial=False, mode="single"):
     save_loc = conf["save_loc"]
     data_params = conf["data"]
     training_metric = conf["training_metric"]
-    direction = conf["direction"]
 
     # ensemble parameters
     monte_carlo_passes = conf["ensemble"]["monte_carlo_passes"]
@@ -73,7 +67,7 @@ def trainer(conf, trial=False, mode="single"):
     n_splits = conf["ensemble"]["n_splits"]
 
     model_params = conf["model"]
-    model_params["save_path"] = save_loc
+    model_params["save_path"] = os.path.join(save_loc, "models")
 
     # Load data, splitter, and scalers
     data = pd.read_csv(conf["data"]["save_loc"])
@@ -83,21 +77,17 @@ def trainer(conf, trial=False, mode="single"):
     input_cols = data_params["input_cols"]
     output_cols = data_params["output_cols"]
 
-    # Make some directories if ECHO is not running
-    if monte_carlo_passes > 1:
-        os.makedirs(os.path.join(save_loc, "monte_carlo/metrics"), exist_ok=True)
-        os.makedirs(os.path.join(save_loc, "monte_carlo/evaluate"), exist_ok=True)
-    if trial is False:  # Dont create directories if ECHO is running
+    if trial is False:  # Create directories if ECHO is NOT running
         os.makedirs(os.path.join(save_loc, mode), exist_ok=True)
         os.makedirs(os.path.join(save_loc, f"{mode}/models"), exist_ok=True)
         os.makedirs(os.path.join(save_loc, f"{mode}/metrics"), exist_ok=True)
         os.makedirs(os.path.join(save_loc, f"{mode}/evaluate"), exist_ok=True)
         # Update where the best model will be saved
-        # conf["save_loc"] = os.path.join(save_loc, f"{mode}/models")
-        conf["model"]["save_path"] = os.path.join(save_loc, f"{mode}/models")
+        # conf["save_loc"] = os.path.join(save_loc, f"{mode}", "models")
+        conf["model"]["save_path"] = os.path.join(save_loc, f"{mode}", "models")
         conf["model"]["model_name"] = "best.h5"
 
-        if not os.path.isfile(os.path.join(save_loc, f"{mode}/models", "model.yml")):
+        if not os.path.isfile(os.path.join(save_loc, f"{mode}", "models", "model.yml")):
             with open(
                 os.path.join(save_loc, f"{mode}/models", "model.yml"), "w"
             ) as fid:
@@ -117,23 +107,17 @@ def trainer(conf, trial=False, mode="single"):
         data.iloc[test_index].copy(),
     )
 
-    # Make N train-valid splits using day as grouping variable
-    gsp = load_splitter(
-        data_params["splitter"], n_splits=n_splits, random_state=seed, train_size=0.885
-    )
-    splits = list(gsp.split(_train_data, groups=_train_data[split_col]))
-
-    # Train ensemble of parametric models
-    if mode == "seed":
+    # Save arrays for ensembles
+    if n_models > 1:
         ensemble_mu = np.zeros((n_models, _test_data.shape[0], len(output_cols)))
-        ensemble_var = np.zeros((n_models, _test_data.shape[0], len(output_cols)))
+        ensemble_sigma = np.zeros((n_models, _test_data.shape[0], len(output_cols)))
     else:
         ensemble_mu = np.zeros((n_splits, _test_data.shape[0], len(output_cols)))
-        ensemble_var = np.zeros((n_splits, _test_data.shape[0], len(output_cols)))
+        ensemble_sigma = np.zeros((n_splits, _test_data.shape[0], len(output_cols)))
 
     best_model = None
-    best_data_split = None
-    best_model_score = 1e10 if direction == "min" else -1e10
+    # best_data_split = None
+    best_model_score = 1e10
 
     for model_seed in range(n_models):
 
@@ -142,21 +126,24 @@ def trainer(conf, trial=False, mode="single"):
             data_params["splitter"],
             n_splits=n_splits,
             random_state=seed,
-            train_size=0.885,  # move this to the config
+            train_size=0.885,
         )
         splits = list(gsp.split(_train_data, groups=_train_data[split_col]))
+
+        # Train ensemble of parametric models
+        _ensemble_pred = np.zeros((n_splits, _test_data.shape[0], len(output_cols)))
 
         if n_models > 1:
             # If only looping over data splits, the model is called below
             # Otherwise we call it here so it can be copied (same random seed)
-            _model = GaussianRegressorDNN(**model_params)
+            _model = RegressorDNN(**model_params)
             # build the model here so the weights are initialized (and can be copied below)
             _model.build_neural_network(
-                _train_data[input_cols].shape[-1], _train_data[output_cols].shape[-1]
+                _train_data[input_cols].values, _train_data[output_cols].values
             )
 
-        # Loop over data splits and train models
-        for data_seed in tqdm.tqdm(range(n_splits)):
+        # Create ensemble from n_splits number of data splits
+        for data_seed in range(n_splits):
 
             # select indices from the split, data splits
             train_index, valid_index = splits[data_seed]
@@ -186,14 +173,13 @@ def trainer(conf, trial=False, mode="single"):
                 y_valid = valid_data[output_cols].values
                 y_test = test_data[output_cols].values
 
-            # Copy / initialize model
-            model = GaussianRegressorDNN(**model_params)
+            # duplicate the model (same seed)
+            model = RegressorDNN(**model_params)
             model.build_neural_network(x_train.shape[-1], y_train.shape[-1])
-            if (
-                n_models > 1
-            ):  # duplicate the model (same seed) -- but I should check this!
+            if n_models > 1:  # duplicate the model (same seed)
                 model.model.set_weights(_model.model.get_weights())
 
+            # fit the model
             model.fit(
                 x_train,
                 y_train,
@@ -202,153 +188,109 @@ def trainer(conf, trial=False, mode="single"):
             )
             history = model.model.history
 
-            # Get the value of the metric
-            if "pit" in training_metric:
-                pitd = []
-                y_pred = model.predict(x_valid)
-                mu, var = model.calc_uncertainties(y_pred, y_scaler)
-                for i, col in enumerate(output_cols):
-                    pitd.append(
-                        pit_deviation_skill_score(
-                            y_valid[:, i],
-                            np.stack([mu[:, i], np.sqrt(var[:, i])], -1),
-                            pred_type="gaussian",
-                        )
-                    )
-                optimization_metric = np.mean(pitd)
-            elif direction == "min":
-                optimization_metric = min(history.history[training_metric])
-            elif direction == "max":
-                optimization_metric = max(history.history[training_metric])
-
             # If ECHO is running this script, n_splits has been set to 1, return the metric here
             if trial is not False:
                 return {
-                    training_metric: optimization_metric,
-                    "val_mae": min(history.history["val_mae"]),
+                    x: min(y)
+                    for x, y in history.history.items()
+                    if x not in trial.params
                 }
 
-            # Write to the logger
-            logger.info(
-                f"Finished model/data split {model_seed}/{data_seed} with metric {training_metric} = {optimization_metric}"
-            )
-
             # Save if its the best model
-            c1 = (direction == "min") and (optimization_metric < best_model_score)
-            c2 = (direction == "max") and (optimization_metric > best_model_score)
-            if c1 | c2:
+            if min(history.history[training_metric]) < best_model_score:
                 best_model = model
-                best_model_score = optimization_metric
                 best_data_split = data_seed
-                model.model_name = "best.h5"
                 model.save_model()
 
-            # Evaluate on the test holdout split
-            y_pred = model.predict(x_test)
-            mu, aleatoric = model.calc_uncertainties(y_pred, y_scaler)
-            if mu.shape[-1] == 1:
-                mu = np.expand_dims(mu)
-                aleatoric = np.expand_dims(aleatoric, 1)
-
-            if mode == "seed":
-                ensemble_mu[model_seed] = mu
-                ensemble_var[model_seed] = aleatoric
-            else:
-                ensemble_mu[data_seed] = mu
-                ensemble_var[data_seed] = aleatoric
-
-            # Save the ensemble member df
-            _test_data[[f"{x}_pred" for x in output_cols]] = mu
-            _test_data[[f"{x}_ale" for x in output_cols]] = aleatoric
-            _test_data.to_csv(
-                os.path.join(save_loc, f"{mode}/evaluate", f"test_{data_seed}.csv")
+            # evaluate on the test holdout split
+            _ensemble_pred[data_seed] = y_scaler.inverse_transform(
+                model.predict(x_test)
             )
 
-            # Delete old models
+            if mode == "data" and monte_carlo_passes > 0:
+                # elif monte_carlo_passes > 0:  # mode = seed or single
+                # Create ensemble from MC dropout
+                dropout_mu = model.predict_monte_carlo(
+                    x_test, y_test, forward_passes=monte_carlo_passes, y_scaler=y_scaler
+                )
+                # Calculating mean across multiple MCD forward passes
+                # shape (n_samples, n_classes)
+                ensemble_mu[data_seed] = np.mean(dropout_mu, axis=0)
+                # Calculating variance across multiple MCD forward passes
+                # shape (n_samples, n_classes)
+                ensemble_sigma[data_seed] = np.var(dropout_mu, axis=0)
+
             del model
             tf.keras.backend.clear_session()
             gc.collect()
 
-    # Evaluation and calculation of uncertainties
-    if mode != "single":
-        logger.info(f"Computing uncertainties from the {mode} ensemble")
+        if mode == "ensemble":
+            # Compute uncertainties for the data ensemble
+            ensemble_mu[model_seed] = np.mean(_ensemble_pred, 0)
+            ensemble_sigma[model_seed] = np.var(_ensemble_pred, 0)
 
-        # Compute uncertainties for the data/model ensemble
-        ensemble_epistemic = np.var(ensemble_mu, axis=0)
-        ensemble_aleatoric = np.mean(ensemble_var, axis=0)
-        ensemble_mean = np.mean(ensemble_mu, axis=0)
+        elif mode == "seed" and monte_carlo_passes > 0:
+            # elif monte_carlo_passes > 0:  # mode = seed or single
+            # Create ensemble from MC dropout
+            dropout_mu = best_model.predict_monte_carlo(
+                x_test, y_test, forward_passes=monte_carlo_passes, y_scaler=y_scaler
+            )
+            # Calculating mean across multiple MCD forward passes
+            ensemble_mu[model_seed] = np.mean(
+                dropout_mu, axis=0
+            )  # shape (n_samples, n_classes)
+            # Calculating variance across multiple MCD forward passes
+            ensemble_sigma[model_seed] = np.var(
+                dropout_mu, axis=0
+            )  # shape (n_samples, n_classes)
 
-        _test_data[[f"{x}_pred" for x in output_cols]] = ensemble_mean
-        _test_data[[f"{x}_ale" for x in output_cols]] = ensemble_aleatoric
-        _test_data[[f"{x}_epi" for x in output_cols]] = ensemble_epistemic
+        elif mode == "single":  # mode = seed or single
+            ensemble_mu[model_seed] = _ensemble_pred[0]
 
-        # save
-        _test_data.to_csv(os.path.join(save_loc, f"{mode}/evaluate/test.csv"))
-        np.save(os.path.join(save_loc, f"{mode}/evaluate/test_mu.npy"), ensemble_mu)
-        np.save(os.path.join(save_loc, f"{mode}/evaluate/test_sigma.npy"), ensemble_var)
+    # If we have not created an ensemble, we are finished.
+    if mode == "single":
+        _test_data[[f"{x}_pred" for x in output_cols]] = ensemble_mu[0]
+        _test_data.to_csv(os.path.join(save_loc, f"{mode}/evaluate", "test.csv"))
+        return 1.0
 
-        # make some figures
-        title = "Model seed ensemble" if mode == "seed" else "Cross validation ensemble"
-        compute_results(
-            _test_data,
-            output_cols,
-            ensemble_mean,
-            ensemble_aleatoric,
-            ensemble_epistemic,
-            ensemble_mu=ensemble_mu,
-            ensemble_type=title,
-            fn=os.path.join(save_loc, f"{mode}/metrics"),
+    # We only created ensemble over model or seed but not both and no MC dropout
+    if mode in ["model", "seed"] and (monte_carlo_passes == 0):
+        _test_data[[f"{x}_ensemble_pred" for x in output_cols]] = np.mean(
+            _ensemble_pred, 0
         )
-
-    # Compute epistemic uncertainty via MC-dropout
-    if monte_carlo_passes > 0:
-        logger.info("Computing uncertainties using Monte Carlo dropout")
-
-        dropout_mu, dropout_aleatoric = best_model.predict_monte_carlo(
-            x_test,
-            y_test,
-            forward_passes=monte_carlo_passes,
-            y_scaler=y_scaler,
+        _test_data[[f"{x}_ensemble_var" for x in output_cols]] = np.var(
+            _ensemble_pred, 0
         )
+        _test_data.to_csv(os.path.join(save_loc, f"{mode}/evaluate", "test.csv"))
+        return 1.0
 
-        # Calculating mean across multiple MCD forward passes
-        mc_mu = np.mean(dropout_mu, axis=0)  # shape (n_samples, n_classes)
-        mc_aleatoric = np.mean(
-            dropout_aleatoric, axis=0
-        )  # shape (n_samples, n_classes)
-        # Calculating variance across multiple MCD forward passes
-        mc_epistemic = np.var(dropout_mu, axis=0)  # shape (n_samples, n_classes)
+    # Compute aleatoric and epistemic uncertainties using law of total uncertainty
+    ensemble_mean = np.mean(ensemble_mu, 0)
+    ensemble_aleatoric = np.mean(ensemble_sigma, 0)
+    ensemble_epistemic = np.var(ensemble_mu, 0)
 
-        _test_data[[f"{x}_pred" for x in output_cols]] = mc_mu
-        _test_data[[f"{x}_ale" for x in output_cols]] = mc_aleatoric
-        _test_data[[f"{x}_epi" for x in output_cols]] = mc_epistemic
+    # add to df and save
+    _test_data[[f"{x}_ensemble_pred" for x in output_cols]] = ensemble_mean
+    _test_data[[f"{x}_ensemble_ale" for x in output_cols]] = ensemble_aleatoric
+    _test_data[[f"{x}_ensemble_epi" for x in output_cols]] = ensemble_epistemic
 
-        # save
-        np.save(os.path.join(save_loc, "monte_carlo/evaluate/test_mu.npy"), dropout_mu)
-        np.save(
-            os.path.join(save_loc, "monte_carlo/evaluate/test_sigma.npy"),
-            dropout_aleatoric,
-        )
-        _test_data.to_csv(os.path.join(save_loc, "monte_carlo/evaluate/test.csv"))
+    # make some figures
+    _test_data.to_csv(os.path.join(save_loc, f"{mode}/evaluate", "test.csv"))
+    compute_results(
+        _test_data,
+        output_cols,
+        ensemble_mean,
+        ensemble_aleatoric,
+        ensemble_epistemic,
+        fn=os.path.join(save_loc, f"{mode}", "metrics"),
+    )
 
-        # Make some figures
-        compute_results(
-            _test_data,
-            output_cols,
-            mc_mu,
-            mc_aleatoric,
-            mc_epistemic,
-            ensemble_mu=dropout_mu,
-            ensemble_type="Monte Carlo ensemble",
-            fn=os.path.join(save_loc, "monte_carlo/metrics"),
-        )
-
-    return 1
+    return 1.0
 
 
 if __name__ == "__main__":
 
-    description = "Train an parametric regression model on a surface layer data set"
+    description = "Train an MLP regression model on a surface layer data set"
     parser = ArgumentParser(description=description)
     parser.add_argument(
         "-c",
@@ -386,24 +328,22 @@ if __name__ == "__main__":
     os.makedirs(save_loc, exist_ok=True)
 
     # Load the "ensemble" details fron the config
-    # Options: ensemble, seed, monte-carlo, single-model
-    # Ensemble if n_splits > 1 and n_models = 1
-    # Seed if n_splits = 1 and n_models > 1
-    # Single model if n_splits = 1 and n_models = 1
-    # Monte-Carlo if mc_steps > 0
     n_models = conf["ensemble"]["n_models"]
     n_splits = conf["ensemble"]["n_splits"]
     monte_carlo_passes = conf["ensemble"]["monte_carlo_passes"]
-    modes = []
+
+    # How is this script supposed to run?
     if n_splits > 1 and n_models == 1:
         mode = "data"
     elif n_splits == 1 and n_models > 1:
         mode = "seed"
     elif n_splits == 1 and n_models == 1:
         mode = "single"
+    elif n_splits > 1 and n_models > 1:
+        mode = "ensemble"
     else:
         raise ValueError(
-            "For the Gaussian model, only one of n_models or n_splits can be > 1 while the other must be 1"
+            "Incorrect selection of n_splits or n_models. Both must be at greater than or equal to 1."
         )
     logger.info(
         f"Running with ensemble mode: {mode} with n_splits: {n_splits}, n_models: {n_models}, mc_steps: {monte_carlo_passes}"
