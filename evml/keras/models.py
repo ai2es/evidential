@@ -12,6 +12,10 @@ from evml.keras.losses import DirichletEvidentialLoss
 from evml.keras.callbacks import ReportEpoch
 from imblearn.under_sampling import RandomUnderSampler
 from imblearn.tensorflow import balanced_batch_generator
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 class RegressorDNN(object):
@@ -98,7 +102,7 @@ class RegressorDNN(object):
             outputs (int): Number of output predictor variables
         """
 
-        nn_input = Input(shape=(inputs.shape[1],), name="input")
+        nn_input = Input(shape=(inputs,), name="input")
         nn_model = nn_input
 
         if self.activation == "leaky":
@@ -128,7 +132,7 @@ class RegressorDNN(object):
                 nn_model = GaussianNoise(self.noise_sd, name=f"ganoise_h_{h:02d}")(
                     nn_model
                 )
-        nn_model = Dense(outputs.shape[-1], name="dense_last")(nn_model)
+        nn_model = Dense(outputs, name="dense_last")(nn_model)
         self.model = Model(nn_input, nn_model)
         if self.optimizer == "adam":
             self.optimizer_obj = Adam(learning_rate=self.lr)
@@ -155,7 +159,6 @@ class RegressorDNN(object):
         use_multiprocessing=False,
     ):
 
-        self.build_neural_network(x, y)
         self.model.fit(
             x=x,
             y=y,
@@ -179,22 +182,45 @@ class RegressorDNN(object):
         )
         return
 
-    def load_model(self, model_path=False):
-        model_path = os.path.join(self.save_path, self.model_name) if not model_path else model_path
-        self.model = tf.keras.models.load_model(model_path)
-        return
+    @classmethod
+    def load_model(cls, conf):
+        # Check if weights file exists
+        weights = os.path.join(conf["model"]["save_path"], "best.h5")
+        if not os.path.isfile(weights):
+            raise ValueError(
+                f"No saved model exists at {weights}. You must train a model first. Exiting."
+            )
 
-    def predict(self, x, scaler=None):
-        y_out = self.model.predict(x, batch_size=self.batch_size)
+        logger.info(
+            f"Loading a RegressorDNN with pre-trained weights from path {weights}"
+        )
+        model_class = cls(**conf["model"])
+        model_class.build_neural_network(
+            len(conf["data"]["input_cols"]), len(conf["data"]["output_cols"])
+        )
+        model_class.model.load_weights(weights)
+        return model_class
+
+    def predict(self, x, scaler=None, batch_size=None):
+        _batch_size = self.batch_size if batch_size is None else batch_size
+        y_out = self.model.predict(x, batch_size=_batch_size)
         return y_out
 
-    def predict_monte_carlo(self, x_test, y_test, forward_passes, y_scaler=None):
+    def predict_monte_carlo(
+        self, x_test, y_test, forward_passes, y_scaler=None, batch_size=None
+    ):
+        _batch_size = self.batch_size if batch_size is None else batch_size
         n_samples = x_test.shape[0]
         pred_size = y_test.shape[1]
         dropout_mu = np.zeros((forward_passes, n_samples, pred_size))
 
         for i in range(forward_passes):
-            output = self.model(x_test, training=True)
+            output = [
+                self.model(x_test[i : i + _batch_size], training=True)
+                for i in range(0, x_test.shape[0], _batch_size)
+            ]
+            output = np.concatenate(output, axis=0)
+            # output = self.model(x_test, training=True)
             if y_scaler:
                 if output.shape[-1] == 1:
                     output = np.expand_dims(output, 1)
@@ -290,7 +316,7 @@ class EvidentialRegressorDNN(object):
             outputs (int): Number of output predictor variables
         """
 
-        nn_input = Input(shape=(inputs.shape[1],), name="input")
+        nn_input = Input(shape=(inputs,), name="input")
         nn_model = nn_input
 
         if self.activation == "leaky":
@@ -320,9 +346,7 @@ class EvidentialRegressorDNN(object):
                 nn_model = GaussianNoise(self.noise_sd, name=f"ganoise_h_{h:02d}")(
                     nn_model
                 )
-        nn_model = DenseNormalGamma(outputs.shape[-1], name="DenseNormalGamma")(
-            nn_model
-        )
+        nn_model = DenseNormalGamma(outputs, name="DenseNormalGamma")(nn_model)
         self.model = Model(nn_input, nn_model)
         if self.optimizer == "adam":
             self.optimizer_obj = Adam(
@@ -343,7 +367,7 @@ class EvidentialRegressorDNN(object):
             metrics=metrics,
             run_eagerly=False,
         )
-        self.training_var = [np.var(outputs[:, i]) for i in range(outputs.shape[1])]
+        # self.training_var = [np.var(outputs[:, i]) for i in range(outputs)]
 
     def fit(
         self,
@@ -357,7 +381,8 @@ class EvidentialRegressorDNN(object):
         use_multiprocessing=False,
     ):
 
-        self.build_neural_network(x, y)
+        # self.build_neural_network(x.shape[-1], y.shape[-1])
+        self.training_var = [np.var(y[:, i]) for i in range(y.shape[-1])]
         self.model.fit(
             x=x,
             y=y,
@@ -376,18 +401,45 @@ class EvidentialRegressorDNN(object):
         return
 
     def save_model(self):
+        # Save the model weights
         tf.keras.models.save_model(
             self.model, os.path.join(self.save_path, self.model_name), save_format="h5"
         )
+        # Save the training variances
+        np.savetxt(
+            os.path.join(self.save_path, "training_var.txt"),
+            np.array(self.training_var),
+        )
         return
 
-    def load_model(self, model_path=False):
-        model_path = os.path.join(self.save_path, self.model_name) if not model_path else model_path
-        self.model = tf.keras.models.load_model(model_path)
-        return
+    @classmethod
+    def load_model(cls, conf):
+        # Check if weights file exists
+        weights = os.path.join(conf["model"]["save_path"], "best.h5")
+        if not os.path.isfile(weights):
+            raise ValueError(
+                f"No saved model exists at {weights}. You must train a model first. Exiting."
+            )
 
-    def predict(self, x, scaler=None):
-        y_out = self.model.predict(x, batch_size=self.batch_size)
+        logger.info(
+            f"Loading a parametric DNN with pre-trained weights from path {weights}"
+        )
+        model_class = cls(**conf["model"])
+        model_class.build_neural_network(
+            len(conf["data"]["input_cols"]), len(conf["data"]["output_cols"])
+        )
+        model_class.model.load_weights(weights)
+
+        # Load the variances
+        model_class.training_var = np.loadtxt(
+            os.path.join(os.path.join(conf["model"]["save_path"], "training_var.txt"))
+        )
+
+        return model_class
+
+    def predict(self, x, scaler=None, batch_size=None):
+        _batch_size = self.batch_size if batch_size is None else batch_size
+        y_out = self.model.predict(x, batch_size=_batch_size)
         if self.uncertainties:
             y_out_final = self.calc_uncertainties(y_out, scaler)
         else:
@@ -421,12 +473,13 @@ class EvidentialRegressorDNN(object):
 
         return mu, aleatoric, epistemic
 
-    def predict_dist_params(self, x, y_scaler=False):
-        preds = self.model.predict(x, batch_size=self.batch_size)
+    def predict_dist_params(self, x, y_scaler=None, batch_size=None):
+        _batch_size = self.batch_size if batch_size is None else batch_size
+        preds = self.model.predict(x, batch_size=_batch_size)
         mu, v, alpha, beta = np.split(preds, 4, axis=-1)
         if mu.shape[-1] == 1:
             mu = np.expand_dims(mu, 1)
-        if y_scaler:
+        if y_scaler is not None:
             mu = y_scaler.inverse_transform(mu)
 
         return mu, v, alpha, beta
@@ -442,7 +495,7 @@ class GaussianRegressorDNN(EvidentialRegressorDNN):
         """
         self.loss = GaussianNLL
 
-        nn_input = Input(shape=(inputs.shape[1],), name="input")
+        nn_input = Input(shape=(inputs,), name="input")
         nn_model = nn_input
 
         if self.activation == "leaky":
@@ -472,7 +525,7 @@ class GaussianRegressorDNN(EvidentialRegressorDNN):
                 nn_model = GaussianNoise(self.noise_sd, name=f"ganoise_h_{h:02d}")(
                     nn_model
                 )
-        nn_model = DenseNormal(outputs.shape[-1])(nn_model)
+        nn_model = DenseNormal(outputs)(nn_model)
         self.model = Model(nn_input, nn_model)
         if self.optimizer == "adam":
             self.optimizer_obj = Adam(
@@ -493,7 +546,7 @@ class GaussianRegressorDNN(EvidentialRegressorDNN):
             metrics=metrics,
             run_eagerly=False,
         )
-        self.training_var = [np.var(outputs[:, i]) for i in range(outputs.shape[1])]
+        # self.training_var = [np.var(outputs[:, i]) for i in range(outputs.shape[1])]
 
     def mae(self, y_true, y_pred):
         mu, aleatoric = tf.split(y_pred, 2, axis=-1)
@@ -514,7 +567,9 @@ class GaussianRegressorDNN(EvidentialRegressorDNN):
             aleatoric[:, i] *= self.training_var[i]
         return mu, aleatoric
 
-    def predict_monte_carlo(self, x_test, y_test, forward_passes, y_scaler=None):
+    def predict_monte_carlo(
+        self, x_test, y_test, forward_passes, y_scaler=None, batch_size=None
+    ):
         """Function to get the monte-carlo samples and uncertainty estimates
         through multiple forward passes
 
@@ -533,16 +588,34 @@ class GaussianRegressorDNN(EvidentialRegressorDNN):
         """
         n_samples = x_test.shape[0]
         pred_size = y_test.shape[1]
+        _batch_size = self.batch_size if batch_size is None else batch_size
         dropout_mu = np.zeros((forward_passes, n_samples, pred_size))
         dropout_aleatoric = np.zeros((forward_passes, n_samples, pred_size))
 
         for i in range(forward_passes):
-            output = self.model(x_test, training=True)
-            mu, aleatoric = self.calc_uncertainties(output.numpy(), y_scaler)
+            # output = self.model(x_test, training=True)
+            output = [
+                self.model(x_test[i : i + _batch_size], training=True)
+                for i in range(0, x_test.shape[0], _batch_size)
+            ]
+            mu, aleatoric = self.calc_uncertainties(
+                np.concatenate(output, axis=0), y_scaler
+            )
             dropout_mu[i] = mu
             dropout_aleatoric[i] = aleatoric
 
         return dropout_mu, dropout_aleatoric
+
+    def predict_dist_params(self, x, y_scaler=None, batch_size=None):
+        _batch_size = self.batch_size if batch_size is None else batch_size
+        preds = self.model.predict(x, batch_size=_batch_size)
+        mu, var = np.split(preds, 2, axis=-1)
+        if mu.shape[-1] == 1:
+            mu = np.expand_dims(mu, 1)
+        if y_scaler is not None:
+            mu = y_scaler.inverse_transform(mu)
+
+        return mu, var
 
 
 class CategoricalDNN(object):
@@ -755,7 +828,7 @@ class CategoricalDNN(object):
                 shuffle=True,
             )
         else:
-            #if not self.steps_per_epoch:
+            # if not self.steps_per_epoch:
             #    self.steps_per_epoch = sample_weight.shape[0] // self.batch_size
             history = self.model.fit(
                 x=x_train,
@@ -765,39 +838,54 @@ class CategoricalDNN(object):
                 epochs=self.epochs,
                 verbose=self.verbose,
                 callbacks=self.callbacks,
-                #steps_per_epoch=self.steps_per_epoch,
-                shuffle=True
+                # steps_per_epoch=self.steps_per_epoch,
+                shuffle=True,
             )
         return history
 
-    # def load_model(self, input_shape, output_shape, weights_path):
-    #     self.build_neural_network(input_shape, output_shape)
-    #     self.model.load_weights(weights_path)
-    #     return
-    
-    def load_model(self, model_path):
-        self.model = tf.keras.models.load_model(model_path)
-        return
+    @classmethod
+    def load_model(cls, conf):
+        weights = os.path.join(conf["save_loc"], "models", "best.h5")
+        if not os.path.isfile(weights):
+            raise ValueError(
+                "No saved model exists. You must train a model first. Exiting."
+            )
+
+        logger.info(
+            f"Loading a CategoricalDNN with pre-trained weights from path {weights}"
+        )
+
+        input_features = (
+            conf["TEMP_C"] + conf["T_DEWPOINT_C"] + conf["UGRD_m/s"] + conf["VGRD_m/s"]
+        )
+        output_features = conf["ptypes"]
+        model_class = cls(**conf["model"])
+        model_class.build_neural_network(len(input_features), len(output_features))
+        model_class.model.load_weights(weights)
+        return model_class
 
     def save_model(self, model_path):
         tf.keras.models.save_model(self.model, model_path, save_format="h5")
         return
 
-    def predict(self, x):
-        y_prob = self.model.predict(x, batch_size=self.batch_size, verbose=self.verbose)
+    def predict(self, x, batch_size=None):
+        _batch_size = self.batch_size if batch_size is None else batch_size
+        y_prob = self.model.predict(x, batch_size=_batch_size, verbose=self.verbose)
         return y_prob
 
-    def predict_proba(self, x):
-        y_prob = self.model.predict(x, batch_size=self.batch_size, verbose=self.verbose)
+    def predict_proba(self, x, batch_size=None):
+        _batch_size = self.batch_size if batch_size is None else batch_size
+        y_prob = self.model.predict(x, batch_size=_batch_size, verbose=self.verbose)
         return y_prob
 
-    def predict_monte_carlo(self, x, mc_forward_passes=10):
+    def predict_monte_carlo(self, x, mc_forward_passes=10, batch_size=None):
+        _batch_size = self.batch_size if batch_size is None else batch_size
         y_prob = np.stack(
             [
                 np.vstack(
                     [
                         self.model(tf.expand_dims(lx, axis=-1), training=True)
-                        for lx in np.array_split(x, x.shape[0] // self.batch_size)
+                        for lx in np.array_split(x, x.shape[0] // _batch_size)
                     ]
                 )
                 for _ in range(mc_forward_passes)

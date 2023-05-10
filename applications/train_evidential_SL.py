@@ -1,6 +1,7 @@
 import logging
 import tqdm
 
+from collections import defaultdict
 from echo.src.base_objective import BaseObjective
 import copy
 import yaml
@@ -104,6 +105,8 @@ def trainer(conf, trial=False):
     best_model = None
     best_split = None
     best_model_score = 1e10 if direction == "min" else -1e10
+    pitd = defaultdict(list)
+
     for data_seed in tqdm.tqdm(range(n_splits)):
         # select indices from the split, data splits
         train_index, valid_index = splits[data_seed]
@@ -135,6 +138,7 @@ def trainer(conf, trial=False):
 
         # load the model
         model = EvidentialRegressorDNN(**model_params)
+        model.build_neural_network(x_train.shape[-1], y_train.shape[-1])
         model.fit(
             x_train,
             y_train,
@@ -164,8 +168,8 @@ def trainer(conf, trial=False):
         # If ECHO is running this script, n_splits has been set to 1, return the metric here
         if trial is not False:
             return {
-                training_metric: optimization_metric, 
-                "val_mae": min(history.history["val_mae"])
+                training_metric: optimization_metric,
+                "val_mae": min(history.history["val_mae"]),
             }
 
         # Write to the logger
@@ -190,6 +194,17 @@ def trainer(conf, trial=False):
         ensemble_ale[data_seed] = aleatoric
         ensemble_epi[data_seed] = epistemic
 
+        for i, col in enumerate(output_cols):
+            pitd[col].append(
+                pit_deviation_skill_score(
+                    test_data[output_cols].values[:, i],
+                    np.stack(
+                        [mu[:, i], np.sqrt(aleatoric[:, i] + epistemic[:, i])], -1
+                    ),
+                    pred_type="gaussian",
+                )
+            )
+
         # check if this is the best model
         del model
         tf.keras.backend.clear_session()
@@ -210,6 +225,9 @@ def trainer(conf, trial=False):
     np.save(os.path.join(save_loc, "evaluate/test_mu.npy"), ensemble_mu)
     np.save(os.path.join(save_loc, "evaluate/test_aleatoric.npy"), ensemble_ale)
     np.save(os.path.join(save_loc, "evaluate/test_epistemic.npy"), ensemble_epi)
+
+    # Save PITD
+    pd.DataFrame.from_dict(pitd).to_csv(os.path.join(save_loc, "evaluate/pitd.csv"))
 
     # make some figures
     os.makedirs(os.path.join(save_loc, "metrics"), exist_ok=True)
@@ -263,6 +281,9 @@ if __name__ == "__main__":
 
     save_loc = conf["save_loc"]
     os.makedirs(save_loc, exist_ok=True)
+
+    conf["model"]["save_path"] = save_loc
+    conf["model"]["model_name"] = "best.h5"
 
     if not os.path.isfile(os.path.join(save_loc, "model.yml")):
         shutil.copyfile(config, os.path.join(save_loc, "model.yml"))

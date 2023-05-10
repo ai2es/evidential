@@ -4,7 +4,6 @@ import tqdm
 from echo.src.base_objective import BaseObjective
 import copy
 import yaml
-import shutil
 import sys
 import os
 import gc
@@ -88,18 +87,23 @@ def trainer(conf, trial=False, mode="single"):
     if monte_carlo_passes > 1:
         os.makedirs(os.path.join(save_loc, "monte_carlo/metrics"), exist_ok=True)
         os.makedirs(os.path.join(save_loc, "monte_carlo/evaluate"), exist_ok=True)
-    if trial is False: # Dont create directories if ECHO is running
+    if trial is False:  # Dont create directories if ECHO is running
         os.makedirs(os.path.join(save_loc, mode), exist_ok=True)
         os.makedirs(os.path.join(save_loc, f"{mode}/models"), exist_ok=True)
         os.makedirs(os.path.join(save_loc, f"{mode}/metrics"), exist_ok=True)
         os.makedirs(os.path.join(save_loc, f"{mode}/evaluate"), exist_ok=True)
         # Update where the best model will be saved
+        # conf["save_loc"] = os.path.join(save_loc, f"{mode}/models")
         conf["model"]["save_path"] = os.path.join(save_loc, f"{mode}/models")
         conf["model"]["model_name"] = "best.h5"
-        
+
         if not os.path.isfile(os.path.join(save_loc, f"{mode}/models", "model.yml")):
-            with open(os.path.join(save_loc, f"{mode}/models", "model.yml"), "w") as fid:
+            with open(
+                os.path.join(save_loc, f"{mode}/models", "model.yml"), "w"
+            ) as fid:
                 yaml.dump(conf, fid)
+
+    raise
 
     # Need the same test_data for all trained models (data and model ensembles)
     gsp = load_splitter(
@@ -150,7 +154,7 @@ def trainer(conf, trial=False, mode="single"):
             _model = GaussianRegressorDNN(**model_params)
             # build the model here so the weights are initialized (and can be copied below)
             _model.build_neural_network(
-                _train_data[input_cols].values, _train_data[output_cols].values
+                _train_data[input_cols].shape[-1], _train_data[output_cols].shape[-1]
             )
 
         # Loop over data splits and train models
@@ -186,20 +190,17 @@ def trainer(conf, trial=False, mode="single"):
 
             # Copy / initialize model
             model = GaussianRegressorDNN(**model_params)
-            model.build_neural_network(x_train, y_train)
+            model.build_neural_network(x_train.shape[-1], y_train.shape[-1])
             if (
                 n_models > 1
             ):  # duplicate the model (same seed) -- but I should check this!
                 model.model.set_weights(_model.model.get_weights())
 
-            model.model.fit(
+            model.fit(
                 x_train,
                 y_train,
                 validation_data=(x_valid, y_valid),
                 callbacks=get_callbacks(conf, path_extend=f"{mode}/models"),
-                batch_size=model.batch_size,
-                epochs=model.epochs,
-                verbose=model.verbose,
             )
             history = model.model.history
 
@@ -225,10 +226,10 @@ def trainer(conf, trial=False, mode="single"):
             # If ECHO is running this script, n_splits has been set to 1, return the metric here
             if trial is not False:
                 return {
-                    training_metric: optimization_metric, 
-                    "val_mae": min(history.history["val_mae"])
+                    training_metric: optimization_metric,
+                    "val_mae": min(history.history["val_mae"]),
                 }
-            
+
             # Write to the logger
             logger.info(
                 f"Finished model/data split {model_seed}/{data_seed} with metric {training_metric} = {optimization_metric}"
@@ -250,7 +251,7 @@ def trainer(conf, trial=False, mode="single"):
             if mu.shape[-1] == 1:
                 mu = np.expand_dims(mu)
                 aleatoric = np.expand_dims(aleatoric, 1)
-            
+
             if mode == "seed":
                 ensemble_mu[model_seed] = mu
                 ensemble_var[model_seed] = aleatoric

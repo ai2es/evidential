@@ -76,17 +76,18 @@ def trainer(conf, trial=False, mode="single"):
     split_col = data_params["split_col"]
     input_cols = data_params["input_cols"]
     output_cols = data_params["output_cols"]
-    
+
     if trial is False:  # Create directories if ECHO is NOT running
         os.makedirs(os.path.join(save_loc, mode), exist_ok=True)
         os.makedirs(os.path.join(save_loc, f"{mode}/models"), exist_ok=True)
         os.makedirs(os.path.join(save_loc, f"{mode}/metrics"), exist_ok=True)
         os.makedirs(os.path.join(save_loc, f"{mode}/evaluate"), exist_ok=True)
         # Update where the best model will be saved
-        conf["model"]["save_path"] = os.path.join(save_loc, f"{mode}/models")
+        # conf["save_loc"] = os.path.join(save_loc, f"{mode}", "models")
+        conf["model"]["save_path"] = os.path.join(save_loc, f"{mode}", "models")
         conf["model"]["model_name"] = "best.h5"
 
-        if not os.path.isfile(os.path.join(save_loc, f"{mode}/models", "model.yml")):
+        if not os.path.isfile(os.path.join(save_loc, f"{mode}", "models", "model.yml")):
             with open(
                 os.path.join(save_loc, f"{mode}/models", "model.yml"), "w"
             ) as fid:
@@ -174,7 +175,7 @@ def trainer(conf, trial=False, mode="single"):
 
             # duplicate the model (same seed)
             model = RegressorDNN(**model_params)
-            model.build_neural_network(x_train, y_train)
+            model.build_neural_network(x_train.shape[-1], y_train.shape[-1])
             if n_models > 1:  # duplicate the model (same seed)
                 model.model.set_weights(_model.model.get_weights())
 
@@ -205,19 +206,19 @@ def trainer(conf, trial=False, mode="single"):
             _ensemble_pred[data_seed] = y_scaler.inverse_transform(
                 model.predict(x_test)
             )
-            
+
             if mode == "data" and monte_carlo_passes > 0:
-                #elif monte_carlo_passes > 0:  # mode = seed or single
+                # elif monte_carlo_passes > 0:  # mode = seed or single
                 # Create ensemble from MC dropout
                 dropout_mu = model.predict_monte_carlo(
                     x_test, y_test, forward_passes=monte_carlo_passes, y_scaler=y_scaler
                 )
                 # Calculating mean across multiple MCD forward passes
                 # shape (n_samples, n_classes)
-                ensemble_mu[data_seed] = np.mean(dropout_mu, axis=0)  
+                ensemble_mu[data_seed] = np.mean(dropout_mu, axis=0)
                 # Calculating variance across multiple MCD forward passes
                 # shape (n_samples, n_classes)
-                ensemble_sigma[data_seed] = np.var(dropout_mu, axis=0)  
+                ensemble_sigma[data_seed] = np.var(dropout_mu, axis=0)
 
             del model
             tf.keras.backend.clear_session()
@@ -227,9 +228,9 @@ def trainer(conf, trial=False, mode="single"):
             # Compute uncertainties for the data ensemble
             ensemble_mu[model_seed] = np.mean(_ensemble_pred, 0)
             ensemble_sigma[model_seed] = np.var(_ensemble_pred, 0)
-            
+
         elif mode == "seed" and monte_carlo_passes > 0:
-            #elif monte_carlo_passes > 0:  # mode = seed or single
+            # elif monte_carlo_passes > 0:  # mode = seed or single
             # Create ensemble from MC dropout
             dropout_mu = best_model.predict_monte_carlo(
                 x_test, y_test, forward_passes=monte_carlo_passes, y_scaler=y_scaler
@@ -281,7 +282,7 @@ def trainer(conf, trial=False, mode="single"):
         ensemble_mean,
         ensemble_aleatoric,
         ensemble_epistemic,
-        fn=os.path.join(save_loc, f"{mode}/metrics"),
+        fn=os.path.join(save_loc, f"{mode}", "metrics"),
     )
 
     return 1.0

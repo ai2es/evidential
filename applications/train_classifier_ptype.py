@@ -235,7 +235,7 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes=0):
     if evaluate:
         # Save the best model when not using ECHO
         if conf["ensemble"]["n_splits"] == 1:
-            mlp.model.save(os.path.join(conf["save_loc"], "models", "model.h5"))
+            mlp.model.save(os.path.join(conf["save_loc"], "models", "best.h5"))
         else:
             mlp.model.save(
                 os.path.join(conf["save_loc"], "models", f"model_{data_split}.h5")

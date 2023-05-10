@@ -62,42 +62,100 @@ def evaluate(conf, reevaluate=False):
         }
     else:
         best_split = locate_best_model(save_loc, conf["metric"], conf["direction"])
-        data = {
-            name: pd.read_parquet(
-                os.path.join(save_loc, "evaluate", f"{name}_{best_split}.parquet")
+        # Create symlinks for best model / scalers 
+        #if not os.path.join(save_loc, "models", f"best.h5"):
+        try:
+            os.symlink(
+                os.path.join(save_loc, "models", f"model_{best_split}.h5"),
+                os.path.join(save_loc, "models", f"best.h5")
             )
-            for name in ["train", "val", "test"]
-        }
-        # Loop over the data splits
-        for name in ["test"]:
-            ensemble_p = np.zeros((n_splits, data[name].shape[0]))
-            ensemble_std = np.zeros((n_splits, data[name].shape[0]))
+            os.symlink(
+                os.path.join(save_loc, "models", f"training_log_{best_split}.csv"),
+                os.path.join(save_loc, "models", f"best_training_log.csv")
+            )
+        except FileExistsError:
+            pass
+        try:
+            os.symlink(
+                os.path.join(save_loc, "scalers", f"input_{best_split}.json"),
+                os.path.join(save_loc, "scalers", f"input.json")
+            )
+            os.symlink(
+                os.path.join(save_loc, "scalers", f"output_label_{best_split}.json"),
+                os.path.join(save_loc, "scalers", f"output_label.json")
+            )
+            os.symlink(
+                os.path.join(save_loc, "scalers", f"output_onehot_{best_split}.json"),
+                os.path.join(save_loc, "scalers", f"output_onehot.json")
+            )
+        except FileExistsError:
+            pass
+        # Compute uncertainties with the categorical model 
+        if conf["model"]["loss"] == "categorical_crossentropy":
+            _data = {
+                name: pd.read_parquet(
+                    os.path.join(save_loc, "evaluate", f"{name}_{best_split}.parquet")
+                ).index
+                for name in ["train", "val", "test"]
+            }
+            data = {}
+            data["train"] = pd.concat([
+                pd.read_parquet(
+                    os.path.join(save_loc, "evaluate", f"train_{best_split}.parquet")),
+                pd.read_parquet(
+                    os.path.join(save_loc, "evaluate", f"val_{best_split}.parquet"))
+                ])
+            data["test"] = pd.read_parquet(
+                    os.path.join(save_loc, "evaluate", f"test_{best_split}.parquet"))
+            # Loop over the data splits
+            for name in ["train", "test"]:
+                size = data[name].shape[0]
+                ensemble_p = np.zeros((n_splits, size))
+                ensemble_std = np.zeros((n_splits, size))
 
-            if conf["model"]["loss"] == "categorical_crossentropy":
-                ensemble_entropy = np.zeros((n_splits, data[name].shape[0]))
-                ensemble_mutual = np.zeros((n_splits, data[name].shape[0]))
-
-            # Loop over ensemble of parametric models
-            for split in range(n_splits):
-                dfe = pd.read_parquet(
-                    os.path.join(save_loc, "evaluate", f"{name}_{split}.parquet")
-                )
-                ensemble_p[split] = dfe["pred_conf"]
-                if "epistemic" in dfe:
-                    ensemble_std[split] = dfe["epistemic"]
-                    if conf["model"]["loss"] == "categorical_crossentropy":
-                        ensemble_entropy[split] = dfe["entropy"]
-                        ensemble_mutual[split] = dfe["mutual_info"]
-
-            # Compute averages, uncertainties
-            data[name]["ave_conf"] = np.mean(ensemble_p, axis=0)
-            data[name]["aleatoric"] = np.mean(ensemble_std, axis=0)
-            if "epistemic" in dfe:
-                data[name]["epistemic"] = np.var(ensemble_p, axis=0)
                 if conf["model"]["loss"] == "categorical_crossentropy":
-                    data[name]["ave_entropy"] = np.mean(ensemble_entropy, axis=0)
-                    data[name]["ave_mutual_info"] = np.mean(ensemble_mutual, axis=0)
+                    ensemble_entropy = np.zeros((n_splits, size))
+                    ensemble_mutual = np.zeros((n_splits, size))
 
+                # Loop over ensemble of parametric models
+                for split in range(n_splits):
+                    if name == "test":
+                        dfe = pd.read_parquet(
+                            os.path.join(save_loc, "evaluate", f"{name}_{split}.parquet")
+                        )
+                    else:
+                        dfe = [pd.read_parquet(os.path.join(save_loc, "evaluate", f"train_{split}.parquet"))]
+                        dfe.append(pd.read_parquet(os.path.join(save_loc, "evaluate", f"val_{split}.parquet")))
+                        dfe = pd.concat(dfe, axis = 0)
+                    ensemble_p[split] = dfe["pred_conf"]
+                    if "epistemic" in dfe:
+                        ensemble_std[split] = dfe["epistemic"]
+                        if conf["model"]["loss"] == "categorical_crossentropy":
+                            ensemble_entropy[split] = dfe["entropy"]
+                            ensemble_mutual[split] = dfe["mutual_info"]
+
+                # Compute averages, uncertainties
+                data[name]["ave_conf"] = np.mean(ensemble_p, axis=0)
+                data[name]["aleatoric"] = np.mean(ensemble_std, axis=0)
+                if "epistemic" in dfe:
+                    data[name]["epistemic"] = np.var(ensemble_p, axis=0)
+                    if conf["model"]["loss"] == "categorical_crossentropy":
+                        data[name]["ave_entropy"] = np.mean(ensemble_entropy, axis=0)
+                        data[name]["ave_mutual_info"] = np.mean(ensemble_mutual, axis=0)
+                    
+            # Reindex the train / val splits according to indices from the best model
+            data["val"] = data["train"].iloc[_data["val"]].copy()
+            data["train"] = data["train"].iloc[_data["train"]].copy()
+            
+        else: # Evidential model contains the uncertainties
+            data = {
+                name: pd.read_parquet(
+                    os.path.join(save_loc, "evaluate", f"{name}_{best_split}.parquet")
+                )
+                for name in ["train", "val", "test"]
+            }
+
+    raise
     # Compute categorical metrics
     metrics = defaultdict(list)
     for name in data.keys():
@@ -221,7 +279,7 @@ def evaluate(conf, reevaluate=False):
     for name in data.keys():
         rocs = []
         for i in range(len(output_features)):
-            forecasts = data[name]["pred_conf"]
+            forecasts = data[name][f"pred_conf{i+1}"]
             obs = np.where(data[name]["true_label"] == i, 1, 0)
             roc = DistributedROC(
                 thresholds=np.arange(0.0, 1.01, 0.01), obs_threshold=0.5
@@ -253,12 +311,10 @@ def evaluate(conf, reevaluate=False):
             save_location=os.path.join(save_loc, "plots", f"coverage_{name}.pdf"),
         )
 
-        if name == "test":
-
-            # UQ figures
-            uq_results(
-                data[name], save_location=os.path.join(save_loc, "metrics"), prefix=name
-            )
+        # UQ figures
+        uq_results(
+            data[name], save_location=os.path.join(save_loc, "metrics"), prefix=name
+        )
 
     # Save metrics
     pd.DataFrame.from_dict(metrics).to_csv(

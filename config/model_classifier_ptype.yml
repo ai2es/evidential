@@ -6,38 +6,37 @@ mping_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/mPING_mixture/'
 data_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/ptype_qc/mPING_interpolated_QC2.parquet'
 train_size1: 0.9 # When used with cutoff 2020-07-01 gives about 60/40 train/test split
 train_size2: 0.0
-qc: 5.0 # 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0
+qc: 3.0 # 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0
 test_cutoff: "2020-07-01"
 ptypes: ['ra_percent', 'sn_percent', 'pl_percent', 'fzra_percent']
 metric: "val_ave_acc"
 direction: "max"
 
 ensemble:
-    n_splits: 10
-    mc_steps: 0
+    n_splits: 20
+    mc_steps: 100
 
 model:
     activation: leaky
-    balanced_classes: 0
-    batch_size: 2283
-    dropout_alpha: 0.21955296701004567
+    balanced_classes: 1
+    batch_size: 3097
+    dropout_alpha: 0.31256692323263807
     epochs: 200
-    hidden_layers: 2
-    hidden_neurons: 4001
-    #l2_weight: 0.00012790630149524948
+    hidden_layers: 4
+    hidden_neurons: 6024
     loss: categorical_crossentropy
-    # loss_weights:
-    # - 67.55444369660258
-    # - 99.78302629973186
-    # - 187.03251465137993
-    # - 67.55444369660258
-    lr: 0.0012626618248944381
+    loss_weights:
+    - 21.465788717561477
+    - 83.31367732936326
+    - 136.50944842077058
+    - 152.62042204485107
+    lr: 0.0004035503144482269
     optimizer: adam
     output_activation: softmax
     use_dropout: 1
     verbose: 0
     
-scaler_type: "standard" # standard, robust, minmax, quantile, quantile-uniform
+scaler_type: "quantile" # standard, robust, minmax, quantile, quantile-uniform
 scale_groups: ["TEMP_C", "T_DEWPOINT_C", "UGRD_m/s", "VGRD_m/s"]
 TEMP_C: [
     'TEMP_C_0_m',

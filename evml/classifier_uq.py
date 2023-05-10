@@ -5,6 +5,10 @@ from collections import defaultdict
 from sklearn.metrics import brier_score_loss
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.colors as colors
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def uq_results(df, save_location=None, prefix=None):
