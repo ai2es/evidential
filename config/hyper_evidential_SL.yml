@@ -1,8 +1,8 @@
 log: True
-save_path: "/glade/work/schreck/repos/evidential/main/results/0413_sl/evidential"
+save_path: "/glade/work/schreck/repos/evidential/main/results/production/surface_layer/evidential_uniform/echo"
 
 pbs:
-  jobs: 15
+  jobs: 10
   bash: [
       "source ~/.bashrc", 
       "module unload cuda cudnn", 
@@ -24,8 +24,8 @@ optuna:
   study_name: "evidential"
   storage_type: "sqlite"
   objective: "/glade/work/schreck/repos/evidential/main/applications/train_evidential_SL.py"
-  direction: "maximize"
-  metric: "val_pitd"
+  direction: "minimize"
+  metric: "val_mae"
   n_trials: 1000
   gpu: True
   sampler:
@@ -38,12 +38,24 @@ optuna:
         name: "lr"
         low: 1.0e-06
         high: 1.0e-02
+    model:l1_weight:
+      type: "loguniform"
+      settings:
+        name: "l1_weight"
+        low: 1.0e-12
+        high: 1.0e-02
     model:l2_weight:
       type: "loguniform"
       settings:
         name: "l2_weight"
         low: 1.0e-12
         high: 1.0e-02
+    model:dropout_alpha:
+      type: "float"
+      settings:
+        name: "dropout_alpha"
+        low: 0.0
+        high: 0.5
     model:hidden_layers:
       type: "int"
       settings:
@@ -61,20 +73,20 @@ optuna:
       settings:
         name: "evidential_coef"
         low: 0.0
-        high: 1.0
+        high: 100.0
     model:batch_size:
       type: "int"
       settings:
         name: "batch_size"
         low: 10
-        high: 10000
+        high: 20000
     data:scaler_x:type:
       type: "categorical"
       settings:
         name: "scaler_x"
-        choices: ["standard", "normalize", "symmetric", "quantile", "robust"]
-    # data:scaler_y:type:
-    #   type: "categorical"
-    #   settings:
-    #     name: "scaler_y"
-    #     choices: ["standard", "normalize", "symmetric", "quantile", "robust"]
+        choices: ["standard", "normalize", "symmetric", "quantile", "robust", "quantile-uniform"]
+    data:scaler_y:type:
+      type: "categorical"
+      settings:
+        name: "scaler_y"
+        choices: ["normalize", "quantile-uniform"]

@@ -1,10 +1,11 @@
 seed: 1000
-save_loc: "/glade/work/schreck/repos/evidential/main/results/0413_sl/evidential"
-training_metric: "val_pitd"
-direction: "max"
+save_loc: "/glade/work/schreck/repos/evidential/main/results/production/surface_layer/evidential_uniform"
+training_metric: "val_mae"
+direction: "min"
 
 ensemble:
     n_splits: 10
+    n_models: 1
 
 data:
     save_loc: "/glade/p/cisl/aiml/ai2es/surfacelayer/cabauw_derived_data_20210720.csv"
@@ -39,7 +40,7 @@ model:
     activation: relu
     batch_size: 193
     dropout_alpha: 0.2
-    epochs: 100
+    epochs: 200
     evidential_coef: 0.6654439861214466
     hidden_layers: 3
     hidden_neurons: 6088
@@ -81,7 +82,7 @@ callbacks:
     verbose: 0
     
 pbs:
-  name: ev-trainer
+  name: ev-uniform
   select: 1
   ncpus: 8
   ngpus: 1
