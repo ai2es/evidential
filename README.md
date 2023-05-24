@@ -12,14 +12,34 @@ Applications of deep evidential regression and classification to earth systems
 * Install the Miniconda Python installer available
 [here](https://docs.conda.io/en/latest/miniconda.html).
 
-
-* Create a conda environment for ev-ml:  
+* clone evidential repo
 `git clone https://github.com/ai2es/evidential.git`
+
 `cd evidential`
+
+* Create a conda environment for non-Casper users:  
+
 `conda env create -f environment.yml`
 
-* Activate the environment on your machine:  
-`conda activate evml`
+`conda activate evidential`
+
+* Create a conda environment for Casper users including Tensorflow 2.12 with GPU support:
+
+`conda env create -f environment_casper.yml`
+
+`conda activate evidential`
+
+`wget https://github.com/NCAR/casper_tensorflow_gpu/blob/0e154b1c75bce611638daa8219ab2b866367bb72/activate_env_vars.sh`
+
+`wget https://github.com/NCAR/casper_tensorflow_gpu/blob/0e154b1c75bce611638daa8219ab2b866367bb72/deactivate_env_vars.sh`
+
+`mkdir -p $CONDA_PREFIX/etc/conda/activate.d`
+
+`mkdir -p $CONDA_PREFIX/etc/conda/deactivate.d`
+
+`cp deactivate_env_vars.sh $CONDA_PREFIX/etc/conda/deactivate.d/env_vars.sh`
+
+`cp activate_env_vars.sh $CONDA_PREFIX/etc/conda/activate.d/env_vars.sh`
 
 ## Using ev-ml
 
