@@ -1,11 +1,11 @@
 seed: 1000
-save_loc: "/glade/work/schreck/repos/evidential/main/results/0413_sl/gaussian"
-training_metric: "val_pitd"
-direction: "max"
+save_loc: "/glade/work/schreck/repos/evidential/main/results/production/surface_layer/gaussian_data"
+training_metric: "val_mae"
+direction: "min"
 
 ensemble:
-    n_models: 20
-    n_splits: 1
+    n_models: 1
+    n_splits: 20
     monte_carlo_passes: 50
 
 data:
@@ -41,7 +41,7 @@ model:
     activation: relu
     batch_size: 283
     dropout_alpha: 0.2
-    epochs: 100
+    epochs: 200
     hidden_layers: 4
     hidden_neurons: 7907
     kernel_reg: l2
@@ -82,7 +82,7 @@ callbacks:
     verbose: 0
     
 pbs:
-  name: gauss-model
+  name: gauss-data
   select: 1
   ncpus: 8
   ngpus: 1

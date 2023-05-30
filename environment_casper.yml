@@ -1,9 +1,12 @@
 name: evidential
 channels:
   - conda-forge
+  - nvidia
 dependencies:
-  - python
-  - numpy
+  - python=3.10
+  - numpy=1.23.*
+  - cudatoolkit=11.8.0
+  - cuda-nvcc=11.8.*
   - scipy
   - matplotlib
   - xarray
@@ -23,7 +26,8 @@ dependencies:
   - numba
   - cython
   - pip:
-    - tensorflow
+    - nvidia-cudnn-cu11==8.6.0.163
+    - tensorflow==2.12.*
     - pyarrow
     - fastparquet
     - imblearn

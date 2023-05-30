@@ -1,12 +1,12 @@
 seed: 1000
-save_loc: "/glade/work/schreck/repos/evidential/main/results/production/surface_layer/mlp"
+save_loc: "/glade/work/schreck/repos/evidential/main/results/test"
 training_metric: "val_mae"
 direction: "min"
 
 ensemble:
-    n_models: 10
-    n_splits: 10
-    monte_carlo_passes: 50
+    n_models: 100
+    n_splits: 1
+    monte_carlo_passes: 100
 
 data:
     save_loc: "/glade/p/cisl/aiml/ai2es/surfacelayer/cabauw_derived_data_20210720.csv"
@@ -52,8 +52,7 @@ model:
     use_dropout: True
     dropout_alpha: 0.2
     epochs: 100
-    verbose: 2
-    
+    verbose: 0
     
 callbacks:
   EarlyStopping:
@@ -82,7 +81,7 @@ callbacks:
     verbose: 0
     
 pbs:
-  name: mlp-prod
+  name: mlp-seed
   select: 1
   ncpus: 8
   ngpus: 1
