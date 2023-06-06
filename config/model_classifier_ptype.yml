@@ -1,6 +1,6 @@
 seed: 1000
 verbose: 0
-save_loc: "/glade/p/cisl/aiml/ai2es/winter_ptypes/models/classifier_weighted_smallmodel"
+save_loc: "/glade/p/cisl/aiml/ai2es/winter_ptypes/models/classifier_weighted"
 asos_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/ASOS_mixture/'
 mping_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/mPING_mixture/'
 data_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/ptype_qc/mPING_interpolated_QC2.parquet'
@@ -13,24 +13,24 @@ metric: "val_ave_acc"
 direction: "max"
 
 ensemble:
-    n_splits: 1
+    n_splits: 20
     mc_steps: 100
 
 model:
-    activation: elu
+    activation: leaky
     balanced_classes: 1
-    batch_size: 1289
-    dropout_alpha: 0.217191294429198
-    epochs: 1000
-    hidden_layers: 11
-    hidden_neurons: 541
+    batch_size: 3097
+    dropout_alpha: 0.31256692323263807
+    epochs: 200
+    hidden_layers: 3
+    hidden_neurons: 200
     loss: categorical_crossentropy
     loss_weights:
-    - 92.96912671890074
-    - 41.743749696615055
-    - 12.99938921008767
-    - 5.018459330108088
-    lr: 0.0008707816746166255
+    - 21.465788717561477
+    - 83.31367732936326
+    - 136.50944842077058
+    - 152.62042204485107
+    lr: 0.0004035503144482269
     optimizer: adam
     output_activation: softmax
     use_dropout: 1
@@ -389,3 +389,4 @@ pbs:
   env_setup: |
     source ~/.bashrc 
     conda activate evidential
+    
