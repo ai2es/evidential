@@ -121,27 +121,28 @@ class DirichletInformedPriorLoss(tf.keras.losses.Loss):
         S_alpha = tf.reduce_sum(alpha, axis=1, keepdims=True)
         S_beta = tf.reduce_sum(beta, axis=1, keepdims=True)
         
-        A = tf.math.lgamma(S_alpha) - tf.math.lgamma(S_beta) #ln Gamma(K) 
-        
-        B = (
-            tf.reduce_sum(tf.math.lgamma(beta), axis=1, keepdims=True) 
-             - tf.reduce_sum(tf.math.lgamma(alpha), axis=1, keepdims=True)
-            )
+        lnB = tf.math.lgamma(S_alpha) - tf.reduce_sum(
+            tf.math.lgamma(alpha), axis=1, keepdims=True
+        )
+        lnB_prior = tf.reduce_sum(
+            tf.math.lgamma(beta), axis=1, keepdims=True
+        ) - tf.math.lgamma(S_beta)
 
         dg0 = tf.math.digamma(S_alpha)
         dg1 = tf.math.digamma(alpha)
 
         kl = (
             tf.reduce_sum((alpha - beta) * (dg1 - dg0), axis=1, keepdims=True)
-            + A
-            + B
+            + lnB
+            + lnB_prior
         )
         return kl
 
     def __call__(self, y, output, sample_weight = None):
         '''
+        y needs to be appended with the informed prior distribution to use in the loss. so y is actually now dim 2*K
         note: need to ensure that the informed prior sums to a known constant (e.g. 1 or K) in order
-        to derive uncertainty value at inference time
+        to derive uncertainty value at inference time.
         '''
         
         evidence = tf.nn.relu(output)
