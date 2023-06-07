@@ -8,7 +8,7 @@ from tensorflow.keras.layers import Dense, LeakyReLU, GaussianNoise, Dropout
 from tensorflow.keras.optimizers import Adam, SGD
 from evml.keras.layers import DenseNormalGamma, DenseNormal
 from evml.keras.losses import EvidentialRegressionLoss, GaussianNLL
-from evml.keras.losses import DirichletEvidentialLoss
+from evml.keras.losses import DirichletEvidentialLoss, DirichletInformedPriorLoss
 from evml.keras.callbacks import ReportEpoch
 from imblearn.under_sampling import RandomUnderSampler
 from imblearn.tensorflow import balanced_batch_generator
@@ -775,7 +775,12 @@ class CategoricalDNN(object):
     def fit(self, x_train, y_train, validation_data=None):
 
         inputs = x_train.shape[-1]
-        outputs = y_train.shape[-1]
+
+        if self.loss == 'dirichletIP':
+            outputs = y_train.shape[-1] // 2
+        else:
+            outputs = y_train.shape[-1]
+       
 
         if self.loss == "dirichlet":
             for callback in self.callbacks:
@@ -789,6 +794,20 @@ class CategoricalDNN(object):
                 raise OSError(
                     "The ReportEpoch callback needs to be used in order to run the evidential model."
                 )
+            
+        if self.loss == "dirichletIP":
+            for callback in self.callbacks:
+                if isinstance(callback, ReportEpoch):
+                    # Don't use weights within Dirichelt, it is done below using sample weight
+                    self.loss = DirichletInformedPriorLoss(
+                        callback=callback, name=self.loss
+                    )
+                    break
+            else:
+                raise OSError(
+                    "The ReportEpoch callback needs to be used in order to run the evidential model."
+                )
+        
         self.build_neural_network(inputs, outputs)
         if self.balanced_classes:
             train_idx = np.argmax(y_train, 1)
