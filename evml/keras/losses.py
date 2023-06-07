@@ -143,6 +143,12 @@ class DirichletInformedPriorLoss(tf.keras.losses.Loss):
         y needs to be appended with the informed prior distribution to use in the loss. so y is actually now dim 2*K
         note: need to ensure that the informed prior sums to a known constant (e.g. 1 or K) in order
         to derive uncertainty value at inference time.
+
+        This loss uses an informed prior (e.g. climatological average) instead of a uniform prior for training. 
+        However, the caveat is that for each y, you will need to append the informed prior so the loss function can use it. 
+        The new y dim must be 2K. Note however that models trained with this loss does not need the 
+        informed prior (IP) in order to do inference. 
+        But the IP needs to sum to a known value (i suggest K) to obtain uncertainty estimates
         '''
         
         evidence = tf.nn.relu(output)
