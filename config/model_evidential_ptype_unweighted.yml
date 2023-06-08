@@ -1,6 +1,6 @@
 seed: 1000
 verbose: 0
-save_loc: "/glade/scratch/schreck/repos/evidential/results/ptype/weighted/evidential"
+save_loc: "/glade/p/cisl/aiml/ai2es/winter_ptypes/models/evidential_unweighted"
 asos_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/ASOS_mixture/'
 mping_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/mPING_mixture/'
 data_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/ptype_qc/mPING_interpolated_QC2.parquet'
@@ -13,21 +13,20 @@ metric: "val_ave_acc"
 direction: "max"
 
 ensemble:
-    n_splits: 10
+    n_splits: 20
     mc_steps: 0
 
 model:
     activation: leaky
-    annealing_coeff: 54.13749350065054
+    annealing_coeff: 34.593686950910275
     balanced_classes: 0
-    batch_size: 7824
-    dropout_alpha: 0.25606086133376166
-    epochs: 1000
-    hidden_layers: 5
-    hidden_neurons: 3118
-    #l2_weight: 1.596970647006705e-10
+    batch_size: 3097
+    dropout_alpha: 0.31256692323263807
+    epochs: 200
+    hidden_layers: 3
+    hidden_neurons: 200
     loss: dirichlet
-    lr: 0.0010909892128832725
+    lr: 0.0004035503144482269
     optimizer: adam
     output_activation: linear
     use_dropout: 1
@@ -332,7 +331,7 @@ callbacks:
     CSVLogger:
         filename: "training_log.csv"
         separator: ","
-        append: 0
+        append: 1 # all ensembles will write to the same log
 #     ModelCheckpoint:
 #         filepath: "best"
 #         monitor: "val_f1"
@@ -372,3 +371,17 @@ case_studies:
         '2016-12-19',
         '2016-12-20'
      ]
+
+pbs:
+  name: ptype-ev-unw
+  select: 1
+  ncpus: 8
+  ngpus: 1
+  mem: 128GB
+  walltime: 12:00:00
+  gpu_type: v100
+  account: NAML0001
+  queue: casper
+  env_setup: |
+    source ~/.bashrc 
+    conda activate evidential

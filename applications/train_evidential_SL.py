@@ -105,7 +105,7 @@ def trainer(conf, trial=False):
     best_model = None
     best_split = None
     best_model_score = 1e10 if direction == "min" else -1e10
-    pitd = defaultdict(list)
+    pitd_dict = defaultdict(list)
 
     for data_seed in tqdm.tqdm(range(n_splits)):
         # select indices from the split, data splits
@@ -195,7 +195,7 @@ def trainer(conf, trial=False):
         ensemble_epi[data_seed] = epistemic
 
         for i, col in enumerate(output_cols):
-            pitd[col].append(
+            pitd_dict[col].append(
                 pit_deviation_skill_score(
                     test_data[output_cols].values[:, i],
                     np.stack(
@@ -227,7 +227,7 @@ def trainer(conf, trial=False):
     np.save(os.path.join(save_loc, "evaluate/test_epistemic.npy"), ensemble_epi)
 
     # Save PITD
-    pd.DataFrame.from_dict(pitd).to_csv(os.path.join(save_loc, "evaluate/pitd.csv"))
+    pd.DataFrame.from_dict(pitd_dict).to_csv(os.path.join(save_loc, "evaluate/pitd.csv"))
 
     # make some figures
     os.makedirs(os.path.join(save_loc, "metrics"), exist_ok=True)
