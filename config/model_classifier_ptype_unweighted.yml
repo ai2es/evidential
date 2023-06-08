@@ -1,6 +1,6 @@
 seed: 1000
 verbose: 0
-save_loc: "/glade/scratch/schreck/repos/evidential/results/ptype/weighted/classifier_noweight"
+save_loc: "/glade/p/cisl/aiml/ai2es/winter_ptypes/models/classifier_unweighted"
 asos_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/ASOS_mixture/'
 mping_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/mPING_mixture/'
 data_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/ptype_qc/mPING_interpolated_QC2.parquet'
@@ -19,13 +19,13 @@ ensemble:
 model:
     activation: leaky
     balanced_classes: 0
-    batch_size: 6806
-    dropout_alpha: 0.34946140482433546
+    batch_size: 3097
+    dropout_alpha: 0.31256692323263807
     epochs: 200
-    hidden_layers: 5
-    hidden_neurons: 4920
+    hidden_layers: 3
+    hidden_neurons: 200
     loss: categorical_crossentropy
-    lr: 0.0003129786273367674
+    lr: 0.0004035503144482269
     optimizer: adam
     output_activation: softmax
     use_dropout: 1
@@ -383,8 +383,4 @@ pbs:
   queue: casper
   env_setup: |
     source ~/.bashrc 
-    module unload cuda cudnn 
     conda activate evidential
-    CUDNN_PATH=$(dirname $(python -c "import nvidia.cudnn;print(nvidia.cudnn.__file__)"))
-    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CONDA_PREFIX/lib/:$CUDNN_PATH/lib
-    export XLA_FLAGS=--xla_gpu_cuda_data_dir=$CONDA_PREFIX

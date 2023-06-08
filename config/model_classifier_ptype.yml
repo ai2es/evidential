@@ -22,8 +22,8 @@ model:
     batch_size: 3097
     dropout_alpha: 0.31256692323263807
     epochs: 200
-    hidden_layers: 4
-    hidden_neurons: 6024
+    hidden_layers: 3
+    hidden_neurons: 200
     loss: categorical_crossentropy
     loss_weights:
     - 21.465788717561477
@@ -389,3 +389,4 @@ pbs:
   env_setup: |
     source ~/.bashrc 
     conda activate evidential
+    
