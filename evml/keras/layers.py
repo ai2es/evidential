@@ -18,10 +18,10 @@ class DenseNormalGamma(tf.keras.layers.Layer):
         return tf.math.maximum(tf.nn.softplus(x), self.eps)
 
     def call(self, x):
-        output = self.dense(x)
+        output = self.dense(x) # for float 64s change output = tf.cast(self.dense(x), tf.float64)
         mu, logv, logalpha, logbeta = tf.split(output, 4, axis=-1)
         v = self.evidence(logv)
-        alpha = self.evidence(logalpha) + 1
+        alpha = tf.add(self.evidence(logalpha), tf.convert_to_tensor(1.0, tf.float32)) #change this line for float64s
         beta = self.evidence(logbeta)
         return tf.concat([mu, v, alpha, beta], axis=-1)
 

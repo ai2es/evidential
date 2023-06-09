@@ -280,7 +280,7 @@ class EvidentialRegressorDNN(object):
         save_path=".",
         model_name="model.h5",
         metrics=None,
-        eps=1e-12
+        eps=1e-7 #smallest eps for stable performance with float32s
     ):
 
         self.hidden_layers = hidden_layers
@@ -296,7 +296,7 @@ class EvidentialRegressorDNN(object):
         if loss == 'evidentialReg': #retains backwards compatibility since default without loss arg is original loss
             self.loss = EvidentialRegressionLoss(coeff=self.evidential_coef)
         elif loss == 'evidentialFix': # by default we do not regularize this loss as per meinert and lavin
-            self.loss = EvidentialRegressionFixLoss(coeff=0.0, r=self.coupling_coef, regularize=False)
+            self.loss = EvidentialRegressionFixLoss(coeff=self.evidential_coef, r=self.coupling_coef)
         else:
             raise ValueError("loss needs to be one of evidentialReg or evidentialFix")
 
@@ -470,9 +470,9 @@ class EvidentialRegressorDNN(object):
 
     def calc_uncertainties(self, preds, y_scaler):
         mu, v, alpha, beta = np.split(preds, 4, axis=-1)
-        if isinstance(self.loss, EvidentialRegressionFixLoss):
-            v = 2 * alpha / self.r #need to couple this way otherwise alpha could be negative
 
+        if isinstance(self.loss, EvidentialRegressionFixLoss):
+            v = 2 * (alpha) / self.coupling_coef #need to couple this way otherwise alpha could be negative
         aleatoric = beta / (alpha - 1)
         epistemic = beta / (v * (alpha - 1))
 
@@ -494,9 +494,8 @@ class EvidentialRegressorDNN(object):
         _batch_size = self.batch_size if batch_size is None else batch_size
         preds = self.model.predict(x, batch_size=_batch_size)
         mu, v, alpha, beta = np.split(preds, 4, axis=-1)
-
         if isinstance(self.loss, EvidentialRegressionFixLoss):
-            v = 2 * alpha / self.r #need to couple this way otherwise alpha could be negative
+            v = 2 * (alpha) / self.coupling_coef #need to couple this way otherwise alpha could be negative
         
         if mu.shape[-1] == 1:
             mu = np.expand_dims(mu, 1)
