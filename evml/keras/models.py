@@ -943,13 +943,17 @@ class CategoricalDNN(object):
         )  # shape (n_samples,)
         return pred_probs, epistemic_variance, entropy, mutual_info
 
-    def compute_uncertainties(self, y_pred, num_classes=4):
+    def compute_uncertainties(self, y_pred, num_classes=4): 
         return calc_prob_uncertainty(y_pred, num_classes=num_classes)
+    
+    def compute_uncertainties_IP(self, y_pred, ip, num_classes=4):
+        return calc_prob_uncertainty(y_pred, ip, num_classes=num_classes)
 
 
-def calc_prob_uncertainty(y_pred, num_classes=4):
+
+def calc_prob_uncertainty(y_pred, ip=1, num_classes=4):
     evidence = tf.nn.relu(y_pred)
-    alpha = evidence + 1
+    alpha = evidence + ip
     S = tf.keras.backend.sum(alpha, axis=1, keepdims=True)
     u = num_classes / S
     prob = alpha / S
