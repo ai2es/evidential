@@ -246,9 +246,6 @@ def trainer(conf, trial=False, mode="single"):
             # Evaluate on the test holdout split
             y_pred = model.predict(x_test)
             mu, aleatoric = model.calc_uncertainties(y_pred, y_scaler)
-            if mu.shape[-1] == 1:
-                mu = np.expand_dims(mu)
-                aleatoric = np.expand_dims(aleatoric, 1)
 
             if mode == "seed":
                 ensemble_mu[model_seed] = mu

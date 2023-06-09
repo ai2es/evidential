@@ -279,6 +279,7 @@ class EvidentialRegressorDNN(object):
         save_path=".",
         model_name="model.h5",
         metrics=None,
+        eps=1e-12
     ):
 
         self.hidden_layers = hidden_layers
@@ -320,6 +321,7 @@ class EvidentialRegressorDNN(object):
         self.training_std = None
         self.training_var = None
         self.metrics = metrics
+        self.eps = eps
 
     def build_neural_network(self, inputs, outputs):
         """
@@ -359,7 +361,7 @@ class EvidentialRegressorDNN(object):
                 nn_model = GaussianNoise(self.noise_sd, name=f"ganoise_h_{h:02d}")(
                     nn_model
                 )
-        nn_model = DenseNormalGamma(outputs, name="DenseNormalGamma")(nn_model)
+        nn_model = DenseNormalGamma(outputs, name="DenseNormalGamma", eps = self.eps)(nn_model)
         self.model = Model(nn_input, nn_model)
         if self.optimizer == "adam":
             self.optimizer_obj = Adam(
@@ -468,7 +470,7 @@ class EvidentialRegressorDNN(object):
         return tf.keras.metrics.mean_squared_error(y_true, mu)
 
     def calc_uncertainties(self, preds, y_scaler):
-        mu, v, alpha, beta = np.split(preds, 4, axis=-1)
+        mu, v, alpha, beta = np.split(preds, 4, axis=-1)        
         aleatoric = beta / (alpha - 1)
         epistemic = beta / (v * (alpha - 1))
 
@@ -538,7 +540,7 @@ class GaussianRegressorDNN(EvidentialRegressorDNN):
                 nn_model = GaussianNoise(self.noise_sd, name=f"ganoise_h_{h:02d}")(
                     nn_model
                 )
-        nn_model = DenseNormal(outputs)(nn_model)
+        nn_model = DenseNormal(outputs, eps = self.eps)(nn_model)
         self.model = Model(nn_input, nn_model)
         if self.optimizer == "adam":
             self.optimizer_obj = Adam(
