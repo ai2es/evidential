@@ -249,6 +249,7 @@ class EvidentialRegressorDNN(object):
         epochs: Number of epochs to train
         verbose: Level of detail to provide during training
         model: Keras Model object
+        eps: Smallest value of any NN output
     """
 
     def __init__(
@@ -257,7 +258,7 @@ class EvidentialRegressorDNN(object):
         hidden_neurons=4,
         activation="relu",
         loss='evidentialReg', 
-        coupling_coef=1.0, #right now we have alpha = ... v.. so alpha will be irrelevant for the new loss
+        coupling_coef=1.0, #right now we have alpha = ... v.. so alpha will be coupled in new loss
         evidential_coef=0.05,
         optimizer="adam",
         loss_weights=None,
@@ -294,13 +295,11 @@ class EvidentialRegressorDNN(object):
         self.evidential_coef = evidential_coef
         if loss == 'evidentialReg': #retains backwards compatibility since default without loss arg is original loss
             self.loss = EvidentialRegressionLoss(coeff=self.evidential_coef)
-        elif loss == 'evidentialFix':
-            self.loss = EvidentialRegressionFixLoss(coeff=self.evidential_coef, r=self.coupling_coef, regularize=False)
-            # by default we do not regularize this loss as per meinert and lavin
+        elif loss == 'evidentialFix': # by default we do not regularize this loss as per meinert and lavin
+            self.loss = EvidentialRegressionFixLoss(coeff=0.0, r=self.coupling_coef, regularize=False)
         else:
-            raise ValueError(
-                    "loss needs to be one of evidentialReg or evidentialFix"
-                )
+            raise ValueError("loss needs to be one of evidentialReg or evidentialFix")
+
         self.uncertainties = uncertainties
         self.loss_weights = loss_weights
         self.lr = lr
@@ -470,7 +469,10 @@ class EvidentialRegressorDNN(object):
         return tf.keras.metrics.mean_squared_error(y_true, mu)
 
     def calc_uncertainties(self, preds, y_scaler):
-        mu, v, alpha, beta = np.split(preds, 4, axis=-1)        
+        mu, v, alpha, beta = np.split(preds, 4, axis=-1)
+        if isinstance(self.loss, EvidentialRegressionFixLoss):
+            v = 2 * alpha / self.r #need to couple this way otherwise alpha could be negative
+
         aleatoric = beta / (alpha - 1)
         epistemic = beta / (v * (alpha - 1))
 
@@ -492,6 +494,10 @@ class EvidentialRegressorDNN(object):
         _batch_size = self.batch_size if batch_size is None else batch_size
         preds = self.model.predict(x, batch_size=_batch_size)
         mu, v, alpha, beta = np.split(preds, 4, axis=-1)
+
+        if isinstance(self.loss, EvidentialRegressionFixLoss):
+            v = 2 * alpha / self.r #need to couple this way otherwise alpha could be negative
+        
         if mu.shape[-1] == 1:
             mu = np.expand_dims(mu, 1)
         if y_scaler is not None:
