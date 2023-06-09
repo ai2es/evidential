@@ -472,7 +472,7 @@ class EvidentialRegressorDNN(object):
         mu, v, alpha, beta = np.split(preds, 4, axis=-1)
 
         if isinstance(self.loss, EvidentialRegressionFixLoss):
-            v = 2 * (alpha) / self.coupling_coef #need to couple this way otherwise alpha could be negative
+            v = 2 * (alpha-1) / self.coupling_coef #need to couple this way otherwise alpha could be negative
         aleatoric = beta / (alpha - 1)
         epistemic = beta / (v * (alpha - 1))
 
@@ -495,7 +495,7 @@ class EvidentialRegressorDNN(object):
         preds = self.model.predict(x, batch_size=_batch_size)
         mu, v, alpha, beta = np.split(preds, 4, axis=-1)
         if isinstance(self.loss, EvidentialRegressionFixLoss):
-            v = 2 * (alpha) / self.coupling_coef #need to couple this way otherwise alpha could be negative
+            v = 2 * (alpha-1) / self.coupling_coef #need to couple this way otherwise alpha could be negative
         
         if mu.shape[-1] == 1:
             mu = np.expand_dims(mu, 1)
