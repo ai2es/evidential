@@ -1,6 +1,9 @@
 import os
 import sys
+import glob
+import defaultdict
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 from tensorflow.keras import Input, Model
 from tensorflow.keras.regularizers import L1, L2, L1L2
@@ -275,7 +278,7 @@ class EvidentialRegressorDNN(object):
         save_path=".",
         model_name="model.h5",
         metrics=None,
-        eps=1e-12
+        eps=1e-12,
     ):
 
         self.hidden_layers = hidden_layers
@@ -348,7 +351,9 @@ class EvidentialRegressorDNN(object):
                 nn_model = GaussianNoise(self.noise_sd, name=f"ganoise_h_{h:02d}")(
                     nn_model
                 )
-        nn_model = DenseNormalGamma(outputs, name="DenseNormalGamma", eps = self.eps)(nn_model)
+        nn_model = DenseNormalGamma(outputs, name="DenseNormalGamma", eps=self.eps)(
+            nn_model
+        )
         self.model = Model(nn_input, nn_model)
         if self.optimizer == "adam":
             self.optimizer_obj = Adam(
@@ -457,7 +462,7 @@ class EvidentialRegressorDNN(object):
         return tf.keras.metrics.mean_squared_error(y_true, mu)
 
     def calc_uncertainties(self, preds, y_scaler):
-        mu, v, alpha, beta = np.split(preds, 4, axis=-1)        
+        mu, v, alpha, beta = np.split(preds, 4, axis=-1)
         aleatoric = beta / (alpha - 1)
         epistemic = beta / (v * (alpha - 1))
 
@@ -527,7 +532,7 @@ class GaussianRegressorDNN(EvidentialRegressorDNN):
                 nn_model = GaussianNoise(self.noise_sd, name=f"ganoise_h_{h:02d}")(
                     nn_model
                 )
-        nn_model = DenseNormal(outputs, eps = self.eps)(nn_model)
+        nn_model = DenseNormal(outputs, eps=self.eps)(nn_model)
         self.model = Model(nn_input, nn_model)
         if self.optimizer == "adam":
             self.optimizer_obj = Adam(
@@ -894,7 +899,9 @@ class CategoricalDNN(object):
             ]
         )
         pred_probs = y_prob.mean(axis=0)
-        epistemic_variance = y_prob.var(axis=0)
+        epistemic = y_prob.var(axis=0)
+        aleatoric = np.mean(y_prob * (1.0 - y_prob), axis=0)
+
         # Calculating entropy across multiple MCD forward passes
         epsilon = sys.float_info.min
         entropy = -np.sum(
@@ -904,7 +911,7 @@ class CategoricalDNN(object):
         mutual_info = entropy - np.mean(
             np.sum(-y_prob * np.log(y_prob + epsilon), axis=-1), axis=0
         )  # shape (n_samples,)
-        return pred_probs, epistemic_variance, entropy, mutual_info
+        return pred_probs, aleatoric, epistemic, entropy, mutual_info
 
     def compute_uncertainties(self, y_pred, num_classes=4):
         return calc_prob_uncertainty(y_pred, num_classes=num_classes)
@@ -919,3 +926,17 @@ def calc_prob_uncertainty(y_pred, num_classes=4):
     epistemic = prob * (1 - prob) / (S + 1)
     aleatoric = prob - prob**2 - epistemic
     return prob, u, aleatoric, epistemic
+
+
+def locate_best_model(filepath, metric="val_ave_acc", direction="max"):
+    filepath = glob.glob(os.path.join(filepath, "models", "training_log_*.csv"))
+    func = min if direction == "min" else max
+    scores = defaultdict(list)
+    for filename in filepath:
+        f = pd.read_csv(filename)
+        best_ensemble = int(filename.split("_log_")[1].strip(".csv"))
+        scores["best_ensemble"].append(best_ensemble)
+        scores["metric"].append(func(f[metric]))
+
+    best_c = scores["metric"].index(func(scores["metric"]))
+    return scores["best_ensemble"][best_c]

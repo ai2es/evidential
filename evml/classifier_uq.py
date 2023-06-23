@@ -81,17 +81,17 @@ def uq_results(df, save_location=None, prefix=None):
     )
 
 
-def sort_arr(true_labels, pred_probs, confidences, n_bins=10):
+def sort_arr(true_labels, pred_probs, confidences, n_bins=10, data_min = False, data_max = False):
+    
     # Compute the minimum and maximum values
-    data_min = np.min(confidences)
-    data_max = np.max(confidences)
+    if not data_min:
+        data_min = np.min(confidences)
+    if not data_max:
+        data_max = np.max(confidences)
 
     # Compute the range and standard deviation
     data_range = data_max - data_min
     data_std = np.std(confidences)
-
-    # Define the number of bins
-    n_bins = 10
 
     # Use np.geomspace if the range of values is large compared to the standard deviation
     if data_range > 10 * data_std:

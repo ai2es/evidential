@@ -251,7 +251,7 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes=0):
                 epi = epi.numpy()
             elif mc_forward_passes > 0:  # Compute epistemic uncertainty with MC dropout
                 pred_probs = mlp.predict(x)
-                _, epi, entropy, mutual_info = mlp.predict_monte_carlo(
+                _, ale, epi, entropy, mutual_info = mlp.predict_monte_carlo(
                     x, mc_forward_passes=mc_forward_passes
                 )
             true_labels = np.argmax(data[name][output_features].to_numpy(), 1)
@@ -271,6 +271,9 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes=0):
                     epi, pred_labels[:, None], axis=1
                 )
             elif mc_forward_passes > 0:
+                data[name]["aleatoric"] = np.take_along_axis(
+                    ale, pred_labels[:, None], axis=1
+                )
                 data[name]["epistemic"] = np.take_along_axis(
                     epi, pred_labels[:, None], axis=1
                 )

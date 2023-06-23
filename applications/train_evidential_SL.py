@@ -17,7 +17,7 @@ import tensorflow as tf
 from argparse import ArgumentParser
 
 from tensorflow.keras import backend as K
-from evml.pit import pit_deviation_skill_score
+from evml.pit import pit_deviation_skill_score, pit_deviation
 from evml.keras.models import EvidentialRegressorDNN
 from evml.keras.callbacks import get_callbacks
 from evml.splitting import load_splitter
@@ -47,6 +47,7 @@ class Objective(BaseObjective):
             del conf["callbacks"]["ModelCheckpoint"]
         # Only use 1 data split
         conf["ensemble"]["n_splits"] = 1
+        conf["ensemble"]["n_models"] = 1
 
         try:
             return trainer(conf, trial=trial)
