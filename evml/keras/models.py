@@ -1,7 +1,6 @@
 import os
 import sys
 import glob
-import defaultdict
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -15,6 +14,7 @@ from evml.keras.losses import DirichletEvidentialLoss
 from evml.keras.callbacks import ReportEpoch
 from imblearn.under_sampling import RandomUnderSampler
 from imblearn.tensorflow import balanced_batch_generator
+from collections import defaultdict
 import logging
 
 
