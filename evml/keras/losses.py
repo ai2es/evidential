@@ -30,7 +30,7 @@ class DirichletEvidentialLoss(tf.keras.losses.Loss):
         )
         return kl
 
-    def __call__(self, y, output, sample_weight = None):
+    def __call__(self, y, output, sample_weight=None):
         evidence = tf.nn.relu(output)
         alpha = evidence + 1
 
@@ -104,6 +104,10 @@ class EvidentialRegressionLoss(tf.keras.losses.Loss):
 def GaussianNLL(y, y_pred, reduce=True):
     ax = list(range(1, len(y.shape)))
     mu, sigma = tf.split(y_pred, 2, axis=-1)
-    logprob = -tf.math.log(sigma) - 0.5*tf.math.log(2*np.pi) - 0.5*((y-mu)/sigma)**2
+    logprob = (
+        -tf.math.log(sigma)
+        - 0.5 * tf.math.log(2 * np.pi)
+        - 0.5 * ((y - mu) / sigma) ** 2
+    )
     loss = tf.reduce_mean(-logprob, axis=ax)
     return tf.reduce_mean(loss) if reduce else loss
