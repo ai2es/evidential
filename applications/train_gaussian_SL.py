@@ -2,6 +2,7 @@ import logging
 import tqdm
 
 from echo.src.base_objective import BaseObjective
+import pickle
 import copy
 import yaml
 import sys
@@ -13,9 +14,11 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from argparse import ArgumentParser
+from collections import defaultdict
+from bridgescaler import save_scaler
 
 from keras import backend as K
-from evml.pit import pit_deviation_skill_score
+from evml.pit import pit_deviation_skill_score, pit_deviation
 from evml.keras.models import GaussianRegressorDNN
 from evml.keras.callbacks import get_callbacks
 from evml.splitting import load_splitter
@@ -23,6 +26,7 @@ from evml.regression_uq import compute_results
 from evml.preprocessing import load_preprocessing
 from evml.keras.seed import seed_everything
 from evml.pbs import launch_pbs_jobs
+import traceback
 
 
 warnings.filterwarnings("ignore")
@@ -46,14 +50,13 @@ class Objective(BaseObjective):
         # Only use 1 data split and 1 model (one model seed)
         conf["ensemble"]["n_splits"] = 1
         conf["ensemble"]["n_models"] = 1
-        conf["ensemble"]["monte_carlo_passes"] = 0
-        # Skip MC dropout
-        conf["monte_carlo_passes"] = 0
+        # conf["ensemble"]["monte_carlo_passes"] = 0
 
         try:
             return trainer(conf, trial=trial)
         except Exception as E:
             logger.warning(f"Trial {trial.number} failed due to error {str(E)}")
+            print(traceback.format_exc())
             raise optuna.TrialPruned()
 
 
@@ -84,7 +87,7 @@ def trainer(conf, trial=False, mode="single"):
     output_cols = data_params["output_cols"]
 
     # Make some directories if ECHO is not running
-    if monte_carlo_passes > 1:
+    if monte_carlo_passes > 1 and trial is False:
         os.makedirs(os.path.join(save_loc, "monte_carlo/metrics"), exist_ok=True)
         os.makedirs(os.path.join(save_loc, "monte_carlo/evaluate"), exist_ok=True)
     if trial is False:  # Dont create directories if ECHO is running
@@ -92,6 +95,7 @@ def trainer(conf, trial=False, mode="single"):
         os.makedirs(os.path.join(save_loc, f"{mode}/models"), exist_ok=True)
         os.makedirs(os.path.join(save_loc, f"{mode}/metrics"), exist_ok=True)
         os.makedirs(os.path.join(save_loc, f"{mode}/evaluate"), exist_ok=True)
+        os.makedirs(os.path.join(save_loc, f"{mode}/scalers"), exist_ok=True)
         # Update where the best model will be saved
         # conf["save_loc"] = os.path.join(save_loc, f"{mode}/models")
         conf["model"]["save_path"] = os.path.join(save_loc, f"{mode}/models")
@@ -209,7 +213,7 @@ def trainer(conf, trial=False, mode="single"):
                 mu, var = model.calc_uncertainties(y_pred, y_scaler)
                 for i, col in enumerate(output_cols):
                     pitd.append(
-                        pit_deviation_skill_score(
+                        pit_deviation(
                             y_valid[:, i],
                             np.stack([mu[:, i], np.sqrt(var[:, i])], -1),
                             pred_type="gaussian",
@@ -222,7 +226,7 @@ def trainer(conf, trial=False, mode="single"):
                 optimization_metric = max(history.history[training_metric])
 
             # If ECHO is running this script, n_splits has been set to 1, return the metric here
-            if trial is not False:
+            if trial is not False and conf["ensemble"]["monte_carlo_passes"] == 0:
                 return {
                     training_metric: optimization_metric,
                     "val_mae": min(history.history["val_mae"]),
@@ -243,23 +247,45 @@ def trainer(conf, trial=False, mode="single"):
                 model.model_name = "best.h5"
                 model.save_model()
 
+                # Save scalers
+                for scaler_name, scaler in zip(
+                    ["input", "output"], [x_scaler, y_scaler]
+                ):
+                    fn = os.path.join(
+                        save_loc, f"{mode}/scalers", f"{scaler_name}.json"
+                    )
+                    try:
+                        save_scaler(scaler, fn)
+                    except TypeError:
+                        with open(fn, "wb") as fid:
+                            pickle.dump(scaler, fid)
+
+            if trial is not False:
+                continue
+
             # Evaluate on the test holdout split
-            y_pred = model.predict(x_test)
-            mu, aleatoric = model.calc_uncertainties(y_pred, y_scaler)
+            for split, x_split, df in zip(
+                ["test"], [x_test], [test_data]
+            ):
 
-            if mode == "seed":
-                ensemble_mu[model_seed] = mu
-                ensemble_var[model_seed] = aleatoric
-            else:
-                ensemble_mu[data_seed] = mu
-                ensemble_var[data_seed] = aleatoric
+                y_pred = model.predict(x_split)
+                mu, aleatoric = model.calc_uncertainties(y_pred, y_scaler)
 
-            # Save the ensemble member df
-            _test_data[[f"{x}_pred" for x in output_cols]] = mu
-            _test_data[[f"{x}_ale" for x in output_cols]] = aleatoric
-            _test_data.to_csv(
-                os.path.join(save_loc, f"{mode}/evaluate", f"test_{data_seed}.csv")
-            )
+                if mode == "seed":
+                    ensemble_mu[model_seed] = mu
+                    ensemble_var[model_seed] = aleatoric
+                else:
+                    ensemble_mu[data_seed] = mu
+                    ensemble_var[data_seed] = aleatoric
+
+                # Save the ensemble member df
+                df[[f"{x}_pred" for x in output_cols]] = mu
+                df[[f"{x}_ale" for x in output_cols]] = aleatoric
+                df.to_csv(
+                    os.path.join(
+                        save_loc, f"{mode}/evaluate", f"{split}_{data_seed}.csv"
+                    )
+                )
 
             # Delete old models
             del model
@@ -267,7 +293,7 @@ def trainer(conf, trial=False, mode="single"):
             gc.collect()
 
     # Evaluation and calculation of uncertainties
-    if mode != "single":
+    if mode != "single" and trial is False:
         logger.info(f"Computing uncertainties from the {mode} ensemble")
 
         # Compute uncertainties for the data/model ensemble
@@ -301,9 +327,16 @@ def trainer(conf, trial=False, mode="single"):
     if monte_carlo_passes > 0:
         logger.info("Computing uncertainties using Monte Carlo dropout")
 
+        if trial is not False:  # If running ECHO, use the valid split
+            x = x_valid
+            y = y_valid
+        else:  # Otherwise use the test split
+            x = x_test
+            y = y_test
+
         dropout_mu, dropout_aleatoric = best_model.predict_monte_carlo(
-            x_test,
-            y_test,
+            x,
+            y,
             forward_passes=monte_carlo_passes,
             y_scaler=y_scaler,
         )
@@ -316,17 +349,40 @@ def trainer(conf, trial=False, mode="single"):
         # Calculating variance across multiple MCD forward passes
         mc_epistemic = np.var(dropout_mu, axis=0)  # shape (n_samples, n_classes)
 
+        # Compute PITD
+        pitd_dict = defaultdict(list)
+        for i, col in enumerate(output_cols):
+            pitd_dict[col].append(
+                pit_deviation(
+                    y[:, i],
+                    np.stack(
+                        [mu[:, i], np.sqrt(mc_aleatoric[:, i] + mc_epistemic[:, i])], -1
+                    ),
+                    pred_type="gaussian",
+                )
+            )
+
+        if trial is not False:
+            optimization_metric = np.mean([x[0] for x in pitd_dict.values()])
+            return {
+                training_metric: optimization_metric,
+                "val_mae": min(history.history["val_mae"]),
+            }
+
+        # save
         _test_data[[f"{x}_pred" for x in output_cols]] = mc_mu
         _test_data[[f"{x}_ale" for x in output_cols]] = mc_aleatoric
         _test_data[[f"{x}_epi" for x in output_cols]] = mc_epistemic
 
-        # save
         np.save(os.path.join(save_loc, "monte_carlo/evaluate/test_mu.npy"), dropout_mu)
         np.save(
             os.path.join(save_loc, "monte_carlo/evaluate/test_sigma.npy"),
             dropout_aleatoric,
         )
         _test_data.to_csv(os.path.join(save_loc, "monte_carlo/evaluate/test.csv"))
+        pd.DataFrame.from_dict(pitd_dict).to_csv(
+            os.path.join(save_loc, "monte_carlo/evaluate/pit.csv")
+        )
 
         # Make some figures
         compute_results(
@@ -408,7 +464,6 @@ if __name__ == "__main__":
 
     if launch:
         from pathlib import Path
-
         script_path = Path(__file__).absolute()
         logging.info("Launching to PBS")
         launch_pbs_jobs(config, script_path)

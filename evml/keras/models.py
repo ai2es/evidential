@@ -1,6 +1,8 @@
 import os
 import sys
+import glob
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 from tensorflow.keras import Input, Model
 from tensorflow.keras.regularizers import L1, L2, L1L2
@@ -12,10 +14,12 @@ from evml.keras.losses import DirichletEvidentialLoss
 from evml.keras.callbacks import ReportEpoch
 from imblearn.under_sampling import RandomUnderSampler
 from imblearn.tensorflow import balanced_batch_generator
+from collections import defaultdict
 import logging
 
 
 logger = logging.getLogger(__name__)
+#eps = np.finfo(np.float32).eps
 
 
 class RegressorDNN(object):
@@ -275,7 +279,7 @@ class EvidentialRegressorDNN(object):
         save_path=".",
         model_name="model.h5",
         metrics=None,
-        eps=1e-12
+        eps=1e-12,
     ):
 
         self.hidden_layers = hidden_layers
@@ -348,12 +352,14 @@ class EvidentialRegressorDNN(object):
                 nn_model = GaussianNoise(self.noise_sd, name=f"ganoise_h_{h:02d}")(
                     nn_model
                 )
-        nn_model = DenseNormalGamma(outputs, name="DenseNormalGamma", eps = self.eps)(nn_model)
+        nn_model = DenseNormalGamma(outputs, name="DenseNormalGamma", eps=self.eps)(
+            nn_model
+        )
         self.model = Model(nn_input, nn_model)
         if self.optimizer == "adam":
             self.optimizer_obj = Adam(
                 learning_rate=self.lr
-            )  # , beta_1=self.adam_beta_1, beta_2=self.adam_beta_2)
+            )  # , beta_1=self.adam_beta_1, beta_2=self.adam_beta_2) , clipnorm=1.0
         elif self.optimizer == "sgd":
             self.optimizer_obj = SGD(learning_rate=self.lr, momentum=self.sgd_momentum)
         if self.metrics == "mae":
@@ -424,7 +430,7 @@ class EvidentialRegressorDNN(object):
             )
 
         logger.info(
-            f"Loading a parametric DNN with pre-trained weights from path {weights}"
+            f"Loading an evidential DNN with pre-trained weights from path {weights}"
         )
         model_class = cls(**conf["model"])
         model_class.build_neural_network(
@@ -457,9 +463,9 @@ class EvidentialRegressorDNN(object):
         return tf.keras.metrics.mean_squared_error(y_true, mu)
 
     def calc_uncertainties(self, preds, y_scaler):
-        mu, v, alpha, beta = np.split(preds, 4, axis=-1)        
+        mu, v, alpha, beta = np.split(preds, 4, axis=-1)
         aleatoric = beta / (alpha - 1)
-        epistemic = beta / (v * (alpha - 1))
+        epistemic = aleatoric / v
 
         if len(mu.shape) == 1:
             mu = np.expand_dims(mu, 1)
@@ -527,7 +533,7 @@ class GaussianRegressorDNN(EvidentialRegressorDNN):
                 nn_model = GaussianNoise(self.noise_sd, name=f"ganoise_h_{h:02d}")(
                     nn_model
                 )
-        nn_model = DenseNormal(outputs, eps = self.eps)(nn_model)
+        nn_model = DenseNormal(outputs, eps=self.eps)(nn_model)
         self.model = Model(nn_input, nn_model)
         if self.optimizer == "adam":
             self.optimizer_obj = Adam(
@@ -568,6 +574,47 @@ class GaussianRegressorDNN(EvidentialRegressorDNN):
         for i in range(aleatoric.shape[-1]):
             aleatoric[:, i] *= self.training_var[i]
         return mu, aleatoric
+    
+    @classmethod
+    def load_model(cls, conf):
+        n_models = conf["ensemble"]["n_models"]
+        n_splits = conf["ensemble"]["n_splits"]
+        monte_carlo_passes = conf["ensemble"]["monte_carlo_passes"]
+        if n_splits > 1 and n_models == 1:
+            mode = "data"
+        elif n_splits == 1 and n_models > 1:
+            mode = "seed"
+        elif n_splits == 1 and n_models == 1:
+            mode = "single"
+        else:
+            raise ValueError(
+                "For the Gaussian model, only one of n_models or n_splits can be > 1 while the other must be 1"
+            )
+        save_loc = conf["save_loc"]
+        # Check if weights file exists
+        weights = os.path.join(save_loc, f"{mode}/models", "best.h5")
+        if not os.path.isfile(weights):
+            raise ValueError(
+                f"No saved model exists at {weights}. You must train a model first. Exiting."
+            )
+        if conf["model"]["verbose"]:
+            logger.info(
+                f"Loading a parametric DNN with pre-trained weights from path {weights}"
+            )
+        model_class = cls(**conf["model"])
+        model_class.build_neural_network(
+            len(conf["data"]["input_cols"]), len(conf["data"]["output_cols"])
+        )
+        model_class.model.load_weights(weights)
+
+        # Load the variances
+        model_class.training_var = np.loadtxt(
+            os.path.join(os.path.join(save_loc, f"{mode}/models", "training_var.txt"))
+        )
+        if not isinstance(model_class.training_var, list):
+            model_class.training_var = [model_class.training_var]
+
+        return model_class
 
     def predict_monte_carlo(
         self, x_test, y_test, forward_passes, y_scaler=None, batch_size=None
@@ -894,7 +941,9 @@ class CategoricalDNN(object):
             ]
         )
         pred_probs = y_prob.mean(axis=0)
-        epistemic_variance = y_prob.var(axis=0)
+        epistemic = y_prob.var(axis=0)
+        aleatoric = np.mean(y_prob * (1.0 - y_prob), axis=0)
+
         # Calculating entropy across multiple MCD forward passes
         epsilon = sys.float_info.min
         entropy = -np.sum(
@@ -904,7 +953,7 @@ class CategoricalDNN(object):
         mutual_info = entropy - np.mean(
             np.sum(-y_prob * np.log(y_prob + epsilon), axis=-1), axis=0
         )  # shape (n_samples,)
-        return pred_probs, epistemic_variance, entropy, mutual_info
+        return pred_probs, aleatoric, epistemic, entropy, mutual_info
 
     def compute_uncertainties(self, y_pred, num_classes=4):
         return calc_prob_uncertainty(y_pred, num_classes=num_classes)
@@ -919,3 +968,17 @@ def calc_prob_uncertainty(y_pred, num_classes=4):
     epistemic = prob * (1 - prob) / (S + 1)
     aleatoric = prob - prob**2 - epistemic
     return prob, u, aleatoric, epistemic
+
+
+def locate_best_model(filepath, metric="val_ave_acc", direction="max"):
+    filepath = glob.glob(os.path.join(filepath, "models", "training_log_*.csv"))
+    func = min if direction == "min" else max
+    scores = defaultdict(list)
+    for filename in filepath:
+        f = pd.read_csv(filename)
+        best_ensemble = int(filename.split("_log_")[1].strip(".csv"))
+        scores["best_ensemble"].append(best_ensemble)
+        scores["metric"].append(func(f[metric]))
+
+    best_c = scores["metric"].index(func(scores["metric"]))
+    return scores["best_ensemble"][best_c]

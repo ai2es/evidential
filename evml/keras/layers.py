@@ -1,4 +1,9 @@
 import tensorflow as tf
+import numpy as np
+import tensorflow_addons as tfa
+
+
+#eps = np.finfo(np.float32).eps
 
 
 class DenseNormalGamma(tf.keras.layers.Layer):
@@ -11,7 +16,7 @@ class DenseNormalGamma(tf.keras.layers.Layer):
     def __init__(self, units, name, eps=1e-12, **kwargs):
         super(DenseNormalGamma, self).__init__(name=name, **kwargs)
         self.units = int(units)
-        self.dense = tf.keras.layers.Dense(4 * self.units, activation=None)
+        self.dense = tfa.layers.SpectralNormalization(tf.keras.layers.Dense(4 * self.units, activation=None))
         self.eps = eps
 
     def evidence(self, x):
@@ -36,18 +41,16 @@ class DenseNormalGamma(tf.keras.layers.Layer):
         
         
 class DenseNormal(tf.keras.layers.Layer):
-    def __init__(self, units):
+    def __init__(self, units, eps=1e-12):
         super(DenseNormal, self).__init__()
         self.units = int(units)
-        self.dense = tf.keras.layers.Dense(2 * self.units, activation = "sigmoid", eps = 1e-12)
+        self.dense = tfa.layers.SpectralNormalization(tf.keras.layers.Dense(2 * self.units, activation = "sigmoid"))
         self.eps = eps
 
     def call(self, x):
         output = self.dense(x)
         output = tf.math.maximum(output, self.eps)
         mu, sigma = tf.split(output, 2, axis=-1)
-        #mu = tf.nn.sigmoid(mu) #+ tf.keras.backend.epsilon()
-        #sigma = tf.nn.softplus(logsigma) + tf.keras.backend.epsilon()
         return tf.concat([mu, sigma], axis=-1)
 
     def compute_output_shape(self, input_shape):

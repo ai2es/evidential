@@ -16,9 +16,7 @@ import os
 logger = logging.getLogger(__name__)
 
 
-def get_callbacks(
-    config: Dict[str, str], path_extend=False
-) -> List[Callback]:
+def get_callbacks(config: Dict[str, str], path_extend=False) -> List[Callback]:
     callbacks = []
 
     if "callbacks" in config:

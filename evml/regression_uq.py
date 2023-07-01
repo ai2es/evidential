@@ -142,7 +142,7 @@ def calibration(
 
     if save_location:
         plt.savefig(
-            os.path.join(save_location, "mae_versus_coverage.pdf"),
+            os.path.join(save_location, "mae_versus_coverage.png"),
             dpi=300,
             bbox_inches="tight",
         )
@@ -181,8 +181,8 @@ def plot_uncertainties(
 
         # Create the 2D histogram plot
         my_range = [
-            [np.percentile(epistemic, 0), np.percentile(epistemic, 98)],
-            [np.percentile(aleatoric, 0), np.percentile(aleatoric, 98)],
+            [np.percentile(epistemic, 5), np.percentile(epistemic, 95)],
+            [np.percentile(aleatoric, 5), np.percentile(aleatoric, 95)],
         ]
         hb = axs[i].hist2d(
             epistemic, aleatoric, bins=num_bins, cmap="inferno", range=my_range
@@ -209,7 +209,7 @@ def plot_uncertainties(
 
     if save_location:
         plt.savefig(
-            os.path.join(save_location, "compare_uncertanties.pdf"),
+            os.path.join(save_location, "compare_uncertanties.png"),
             dpi=300,
             bbox_inches="tight",
         )
@@ -286,7 +286,7 @@ def plot_uncertainties(
 
 #     if save_location:
 #         plt.savefig(
-#             os.path.join(save_location, "spread_skill.pdf"),
+#             os.path.join(save_location, "spread_skill.png"),
 #             dpi=300,
 #             bbox_inches="tight",
 #         )
@@ -431,7 +431,7 @@ def plot_skill_score(
     plt.tight_layout()
     if save_location:
         plt.savefig(
-            os.path.join(save_location, "spread_skill.pdf"),
+            os.path.join(save_location, "spread_skill.png"),
             dpi=300,
             bbox_inches="tight",
         )
@@ -481,7 +481,7 @@ def discard_fraction(df, output_cols, legend_cols, save_location=False):
 
     if save_location:
         plt.savefig(
-            os.path.join(save_location, "discard_fraction.pdf"),
+            os.path.join(save_location, "discard_fraction.png"),
             dpi=300,
             bbox_inches="tight",
         )
@@ -557,7 +557,7 @@ def regression_attributes(df, output_cols, legend_cols, nbins=11, save_location=
     plt.tight_layout()
     if save_location:
         plt.savefig(
-            os.path.join(save_location, "regression_attributes.pdf"),
+            os.path.join(save_location, "regression_attributes.png"),
             dpi=300,
             bbox_inches="tight",
         )
@@ -630,7 +630,7 @@ def pit_figure_gaussian(
     # Save
     if save_location:
         plt.savefig(
-            os.path.join(save_location, "pit_histogram_gaussian.pdf"),
+            os.path.join(save_location, "pit_histogram_gaussian.png"),
             dpi=300,
             bbox_inches="tight",
         )
@@ -694,7 +694,7 @@ def pit_figure_ensemble(
     # Save
     if save_location:
         plt.savefig(
-            os.path.join(save_location, "pit_histogram_ensemble.pdf"),
+            os.path.join(save_location, "pit_histogram_ensemble.png"),
             dpi=300,
             bbox_inches="tight",
         )
