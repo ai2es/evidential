@@ -25,6 +25,7 @@ from evml.regression_uq import compute_results
 from evml.preprocessing import load_preprocessing
 from evml.keras.seed import seed_everything
 from evml.pbs import launch_pbs_jobs
+from bridgescaler import save_scaler
 
 
 warnings.filterwarnings("ignore")
@@ -150,17 +151,31 @@ def trainer(conf, trial=False):
 
         # Get the value of the metric
         if "pit" in training_metric:
-            pitd = []
+            _pitd = []
             mu, ale, epi = model.predict(x_valid)
             for i, col in enumerate(output_cols):
-                pitd.append(
+                _pitd.append(
                     pit_deviation_skill_score(
                         y_valid[:, i],
                         np.stack([mu[:, i], np.sqrt(ale[:, i] + epi[:, i])], -1),
                         pred_type="gaussian",
                     )
                 )
-            optimization_metric = np.mean(pitd)
+                # _pitd.append(
+                #     pit_deviation_skill_score(
+                #         y_valid[:, i],
+                #         np.stack([mu[:, i], np.sqrt(ale[:, i])], -1),
+                #         pred_type="gaussian",
+                #     )
+                # )
+                # _pitd.append(
+                #     pit_deviation_skill_score(
+                #         y_valid[:, i],
+                #         np.stack([mu[:, i], np.sqrt(epi[:, i])], -1),
+                #         pred_type="gaussian",
+                #     )
+                # )
+            optimization_metric = np.mean(_pitd)
         elif direction == "min":
             optimization_metric = min(history.history[training_metric])
         elif direction == "max":
@@ -187,6 +202,19 @@ def trainer(conf, trial=False):
             best_split = data_seed
             model.model_name = "best.h5"
             model.save_model()
+            
+            # Save scalers
+            for scaler_name, scaler in zip(
+                ["input", "output"], [x_scaler, y_scaler]
+            ):
+                fn = os.path.join(
+                    conf["model"]["save_path"], f"{scaler_name}.json"
+                )
+                try:
+                    save_scaler(scaler, fn)
+                except TypeError:
+                    with open(fn, "wb") as fid:
+                        pickle.dump(scaler, fid)
 
         # evaluate on the test holdout split
         result = model.predict(x_test, scaler=y_scaler)
@@ -294,7 +322,6 @@ if __name__ == "__main__":
 
     if launch:
         from pathlib import Path
-
         script_path = Path(__file__).absolute()
         logging.info("Launching to PBS")
         launch_pbs_jobs(config, script_path)
