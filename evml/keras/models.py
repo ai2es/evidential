@@ -442,6 +442,9 @@ class EvidentialRegressorDNN(object):
         model_class.training_var = np.loadtxt(
             os.path.join(os.path.join(conf["model"]["save_path"], "training_var.txt"))
         )
+        
+        if not model_class.training_var.shape:
+            model_class.training_var = np.array([model_class.training_var])
 
         return model_class
 
