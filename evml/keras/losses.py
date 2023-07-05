@@ -141,24 +141,26 @@ class DirichletInformedPriorLoss(tf.keras.losses.Loss):
     def __call__(self, y, output, sample_weight = None):
         '''
         y needs to be appended with the informed prior distribution to use in the loss. so y is actually now dim 2*K
-        note: need to ensure that the informed prior sums to a known constant (e.g. 1 or K) in order
-        to derive uncertainty value at inference time.
+        note: need to ensure that the informed prior sums to K for consistency with the uninformed prior 
+        (can actually sum to to any known constant (e.g. 1 or K) in order to derive uncertainty value at inference time.
 
         This loss uses an informed prior (e.g. climatological average) instead of a uniform prior for training. 
         However, the caveat is that for each y, you will need to append the informed prior so the loss function can use it. 
         The new y dim must be 2K. Note however that models trained with this loss does not need the 
         informed prior (IP) in order to do inference. 
-        But the IP needs to sum to a known value (i suggest K) to obtain uncertainty estimates
+        But the IP needs to sum to a known value (K) to obtain uncertainty estimates
         '''
         
         evidence = tf.nn.relu(output)
-        
         y_len = int(y.shape[1] / 2)
         prior_dist = y[: , y_len: ] #2nd half of y
         y = y[: ,  :y_len] #first half of y
 
+        self._check_y(y, y_len, prior_dist)
+
         alpha = evidence + prior_dist
 
+        #rest of this function should be the same as before
         S = tf.reduce_sum(alpha, axis=1, keepdims=True)
         m = alpha / S
 
@@ -174,15 +176,24 @@ class DirichletInformedPriorLoss(tf.keras.losses.Loss):
         C = annealing_coef * self.KL(alpha_hat, prior_dist)
         C = tf.reduce_mean(C, axis=1)
         return tf.reduce_mean(A + B + C)
+    
+    def _check_y(y, y_len, prior_dist):
+        if y.shape[1] % 2 != 0:
+            raise ValueError('The length of each y_i is not an even number. y_i needs to have length 2K')
 
-class EvidentialRegressionFixLoss(tf.keras.losses.Loss):
+        prior_row_sums = tf.reduce_sum(prior_dist, axis=1, keepdims=True) #result: (n, 1)
+        is_equal = tf.math.equal(prior_row_sums, tf.fill(prior_row_sums.shape, y_len))  #result: (n,1)
+        if not tf.math.reduce_all(is_equal):
+            raise ValueError("not all prior distributions sum to K")
+
+class EvidentialRegressionCoupledLoss(tf.keras.losses.Loss):
     def __init__(self, r=1.0, coeff=1.0):
         '''
         implementation of the loss from meinert and lavin that fixes issues with the original
         evidential loss for regression. The loss couples the virtual evidence values with coefficient r. 
         In this new loss, the regularizer is unneccessary.
         '''
-        super(EvidentialRegressionFixLoss, self).__init__()
+        super(EvidentialRegressionCoupledLoss, self).__init__()
         self.coeff = coeff
         self.r = r
 

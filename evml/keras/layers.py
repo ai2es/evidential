@@ -8,7 +8,8 @@ class DenseNormalGamma(tf.keras.layers.Layer):
     Source: https://github.com/aamini/evidential-deep-learning
     """
     
-    def __init__(self, units, name, eps=1e-12, **kwargs):
+    def __init__(self, units, name, eps=1e-7, **kwargs):
+        #1e-7 is smallest we can go for float32
         super(DenseNormalGamma, self).__init__(name=name, **kwargs)
         self.units = int(units)
         self.dense = tf.keras.layers.Dense(4 * self.units, activation=None)
@@ -21,6 +22,7 @@ class DenseNormalGamma(tf.keras.layers.Layer):
         output = self.dense(x) # for float 64s change output = tf.cast(self.dense(x), tf.float64)
         mu, logv, logalpha, logbeta = tf.split(output, 4, axis=-1)
         v = self.evidence(logv)
+        # add 1 to get alpha
         alpha = tf.add(self.evidence(logalpha), tf.convert_to_tensor(1.0, tf.float32)) #change this line for float64s
         beta = self.evidence(logbeta)
         return tf.concat([mu, v, alpha, beta], axis=-1)
