@@ -945,15 +945,10 @@ class CategoricalDNN(object):
 
     def compute_uncertainties(self, y_pred, num_classes=4): 
         return calc_prob_uncertainty(y_pred, num_classes=num_classes)
-    
-    def compute_uncertainties_IP(self, y_pred, ip, num_classes=4):
-        return calc_prob_uncertainty(y_pred, ip, num_classes=num_classes)
 
-
-
-def calc_prob_uncertainty(y_pred, ip=1, num_classes=4):
+def calc_prob_uncertainty(y_pred, num_classes=4):
     evidence = tf.nn.relu(y_pred)
-    alpha = evidence + ip
+    alpha = evidence + num_classes #compatible with IP loss because requiring that prior needs to sum to K
     S = tf.keras.backend.sum(alpha, axis=1, keepdims=True)
     u = num_classes / S
     prob = alpha / S

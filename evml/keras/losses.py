@@ -228,6 +228,6 @@ class EvidentialRegressionCoupledLoss(tf.keras.losses.Loss):
         return loss_nll + self.coeff * loss_reg
 
     def get_config(self):
-        config = super(EvidentialRegressionFixLoss, self).get_config()
+        config = super(EvidentialRegressionCoupledLoss, self).get_config()
         config.update({"r": self.r, "coeff": self.coeff})
         return config
