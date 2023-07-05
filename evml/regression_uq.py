@@ -159,7 +159,6 @@ def plot_uncertainties(
     fontsize=10,
     save_location=None,
 ):
-
     width = 5 if len(output_cols) == 1 else 10
     height = 3.5 if len(output_cols) == 1 else 3.5
     fig, axs = plt.subplots(1, len(output_cols), figsize=(width, height))
@@ -174,7 +173,7 @@ def plot_uncertainties(
         # Calculate the mean prediction for the current column
         aleatoric = ale[:, i]
         epistemic = epi[:, i]
-        
+
         # Remove any NaNs
         aleatoric = aleatoric[np.isfinite(aleatoric)]
         epistemic = epistemic[np.isfinite(epistemic)]
@@ -377,16 +376,17 @@ def plot_skill_score(
     unc_lab = ["Aleatoric", "Epistemic", "Total"]
 
     for j in range(num_outputs):
-
         y_tot = np.sqrt(y_ale**2 + y_epi**2)
 
         for i, std in enumerate([y_ale, y_epi, y_tot]):
-
             # Compute the skill score
             not_nan = np.isfinite(y_pred[:, j]) & np.isfinite(std[:, j])
-            
+
             ss, counts, bins = compute_skill_score(
-                y_true[:, j][not_nan], y_pred[:, j][not_nan], std[:, j][not_nan], num_bins
+                y_true[:, j][not_nan],
+                y_pred[:, j][not_nan],
+                std[:, j][not_nan],
+                num_bins,
             )
 
             # Compute bin centers
@@ -573,7 +573,6 @@ def pit_figure_gaussian(
     legend_cols=["Friction velocity", "Sensible heat", "Latent heat"],
     save_location=None,
 ):
-
     # Create the figure and subplot
     fig, axs = plt.subplots(1, 3, figsize=(10, 3.5), sharey="col")
 
@@ -581,10 +580,8 @@ def pit_figure_gaussian(
     total = aleatoric + epistemic
 
     for j, uq in enumerate([aleatoric, epistemic, total]):
-
         # Loop over the output columns and plot the histograms
         for i, col in enumerate(output_cols):
-
             bin_counts, bin_edges = pit_histogram(
                 df[col].values,
                 np.stack([mu[:, i], np.sqrt(uq[:, i])], -1),
@@ -644,7 +641,6 @@ def pit_figure_ensemble(
     title="Ensemble",
     save_location=None,
 ):
-
     # Create the figure and subplot
     fig, axs = plt.subplots(1, 1, figsize=(5, 3.5), sharey="col")
 
@@ -652,7 +648,6 @@ def pit_figure_ensemble(
 
     # Loop over the output columns and plot the histograms
     for i, col in enumerate(output_cols):
-
         bin_counts, bin_edges = pit_histogram(
             df[col].values, mu[i], pred_type="ensemble", bins=np.linspace(0, 1, 10)
         )

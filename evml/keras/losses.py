@@ -4,7 +4,6 @@ import numpy as np
 
 class DirichletEvidentialLoss(tf.keras.losses.Loss):
     def __init__(self, callback=False, name="dirichlet"):
-
         super().__init__()
         self.callback = callback
         self.__name__ = name
@@ -30,7 +29,7 @@ class DirichletEvidentialLoss(tf.keras.losses.Loss):
         )
         return kl
 
-    def __call__(self, y, output, sample_weight = None):
+    def __call__(self, y, output, sample_weight=None):
         evidence = tf.nn.relu(output)
         alpha = evidence + 1
 
@@ -104,14 +103,17 @@ class EvidentialRegressionLoss(tf.keras.losses.Loss):
 def GaussianNLL(y, y_pred, reduce=True):
     ax = list(range(1, len(y.shape)))
     mu, sigma = tf.split(y_pred, 2, axis=-1)
-    logprob = -tf.math.log(sigma) - 0.5*tf.math.log(2*np.pi) - 0.5*((y-mu)/sigma)**2
+    logprob = (
+        -tf.math.log(sigma)
+        - 0.5 * tf.math.log(2 * np.pi)
+        - 0.5 * ((y - mu) / sigma) ** 2
+    )
     loss = tf.reduce_mean(-logprob, axis=ax)
     return tf.reduce_mean(loss) if reduce else loss
 
 
 class DirichletInformedPriorLoss(tf.keras.losses.Loss):
     def __init__(self, callback=False, name="dirichletIP"):
-
         super().__init__()
         self.callback = callback
         self.__name__ = name
@@ -120,7 +122,7 @@ class DirichletInformedPriorLoss(tf.keras.losses.Loss):
         beta = prior_dist
         S_alpha = tf.reduce_sum(alpha, axis=1, keepdims=True)
         S_beta = tf.reduce_sum(beta, axis=1, keepdims=True)
-        
+
         lnB = tf.math.lgamma(S_alpha) - tf.reduce_sum(
             tf.math.lgamma(alpha), axis=1, keepdims=True
         )
@@ -138,29 +140,30 @@ class DirichletInformedPriorLoss(tf.keras.losses.Loss):
         )
         return kl
 
-    def __call__(self, y, output, sample_weight = None):
-        '''
+    def __call__(self, y, output, sample_weight=None):
+        """
         y needs to be appended with the informed prior distribution to use in the loss. so y is actually now dim 2*K
-        note: need to ensure that the informed prior sums to K for consistency with the uninformed prior 
+        note: need to ensure that the informed prior sums to K for consistency with the uninformed prior so that we
+        can reuse calc_prob_uncertainty functions
         (can actually sum to to any known constant (e.g. 1 or K) in order to derive uncertainty value at inference time.
 
-        This loss uses an informed prior (e.g. climatological average) instead of a uniform prior for training. 
-        However, the caveat is that for each y, you will need to append the informed prior so the loss function can use it. 
-        The new y dim must be 2K. Note however that models trained with this loss does not need the 
-        informed prior (IP) in order to do inference. 
+        This loss uses an informed prior (e.g. climatological average) instead of a uniform prior for training.
+        However, the caveat is that for each y, you will need to append the informed prior so the loss function can use it.
+        The new y dim must be 2K. Note however that models trained with this loss does not need the
+        informed prior (IP) in order to do inference.
         But the IP needs to sum to a known value (K) to obtain uncertainty estimates
-        '''
-        
+        """
+
         evidence = tf.nn.relu(output)
         y_len = int(y.shape[1] / 2)
-        prior_dist = y[: , y_len: ] #2nd half of y
-        y = y[: ,  :y_len] #first half of y
+        prior_dist = y[:, y_len:]  # 2nd half of y
+        y = y[:, :y_len]  # first half of y
 
         self._check_y(y, y_len, prior_dist)
 
         alpha = evidence + prior_dist
 
-        #rest of this function should be the same as before
+        # rest of this function should be the same as before
         S = tf.reduce_sum(alpha, axis=1, keepdims=True)
         m = alpha / S
 
@@ -176,29 +179,36 @@ class DirichletInformedPriorLoss(tf.keras.losses.Loss):
         C = annealing_coef * self.KL(alpha_hat, prior_dist)
         C = tf.reduce_mean(C, axis=1)
         return tf.reduce_mean(A + B + C)
-    
+
     def _check_y(y, y_len, prior_dist):
         if y.shape[1] % 2 != 0:
-            raise ValueError('The length of each y_i is not an even number. y_i needs to have length 2K')
+            raise ValueError(
+                "The length of each y_i is not an even number. y_i needs to have length 2K"
+            )
 
-        prior_row_sums = tf.reduce_sum(prior_dist, axis=1, keepdims=True) #result: (n, 1)
-        is_equal = tf.math.equal(prior_row_sums, tf.fill(prior_row_sums.shape, y_len))  #result: (n,1)
+        prior_row_sums = tf.reduce_sum(
+            prior_dist, axis=1, keepdims=True
+        )  # result: (n, 1)
+        is_equal = tf.math.equal(
+            prior_row_sums, tf.fill(prior_row_sums.shape, y_len)
+        )  # result: (n,1)
         if not tf.math.reduce_all(is_equal):
             raise ValueError("not all prior distributions sum to K")
 
+
 class EvidentialRegressionCoupledLoss(tf.keras.losses.Loss):
     def __init__(self, r=1.0, coeff=1.0):
-        '''
+        """
         implementation of the loss from meinert and lavin that fixes issues with the original
-        evidential loss for regression. The loss couples the virtual evidence values with coefficient r. 
+        evidential loss for regression. The loss couples the virtual evidence values with coefficient r.
         In this new loss, the regularizer is unneccessary.
-        '''
+        """
         super(EvidentialRegressionCoupledLoss, self).__init__()
         self.coeff = coeff
         self.r = r
 
     def NIG_NLL(self, y, gamma, v, alpha, beta, reduce=True):
-        #couple the parameters as per meinert and lavin
+        # couple the parameters as per meinert and lavin
 
         twoBlambda = 2 * beta * (1 + v)
         nll = (
@@ -211,16 +221,22 @@ class EvidentialRegressionCoupledLoss(tf.keras.losses.Loss):
 
         return tf.reduce_mean(nll) if reduce else nll
 
-    def NIG_Reg(self, y, gamma, v, alpha, reduce=True):        
-        error = tf.abs(y - gamma) # can try squared loss here to target the right minimizer
-        evi = v + 2 * alpha #new paper: = v + 2 * alpha, can try to change this to just 2alpha
+    def NIG_Reg(self, y, gamma, v, alpha, reduce=True):
+        error = tf.abs(
+            y - gamma
+        )  # can try squared loss here to target the right minimizer
+        evi = (
+            v + 2 * alpha
+        )  # new paper: = v + 2 * alpha, can try to change this to just 2alpha
         reg = error * evi
 
         return tf.reduce_mean(reg) if reduce else reg
 
     def call(self, y_true, evidential_output):
         gamma, v, alpha, beta = tf.split(evidential_output, 4, axis=-1)
-        v = 2 * (alpha-1) / self.r #need to couple this way otherwise alpha could be negative
+        v = (
+            2 * (alpha - 1) / self.r
+        )  # need to couple this way otherwise alpha could be negative
 
         loss_nll = self.NIG_NLL(y_true, gamma, v, alpha, beta)
         loss_reg = self.NIG_Reg(y_true, gamma, v, alpha)

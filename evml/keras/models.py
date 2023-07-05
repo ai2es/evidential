@@ -7,7 +7,11 @@ from tensorflow.keras.regularizers import L1, L2, L1L2
 from tensorflow.keras.layers import Dense, LeakyReLU, GaussianNoise, Dropout
 from tensorflow.keras.optimizers import Adam, SGD
 from evml.keras.layers import DenseNormalGamma, DenseNormal
-from evml.keras.losses import EvidentialRegressionLoss, EvidentialRegressionFixLoss, GaussianNLL
+from evml.keras.losses import (
+    EvidentialRegressionLoss,
+    EvidentialRegressionFixLoss,
+    GaussianNLL,
+)
 from evml.keras.losses import DirichletEvidentialLoss, DirichletInformedPriorLoss
 from evml.keras.callbacks import ReportEpoch
 from imblearn.under_sampling import RandomUnderSampler
@@ -64,7 +68,6 @@ class RegressorDNN(object):
         model_name="model.h5",
         metrics=None,
     ):
-
         self.hidden_layers = hidden_layers
         self.hidden_neurons = hidden_neurons
         self.activation = activation
@@ -158,7 +161,6 @@ class RegressorDNN(object):
         workers=1,
         use_multiprocessing=False,
     ):
-
         self.model.fit(
             x=x,
             y=y,
@@ -257,8 +259,8 @@ class EvidentialRegressorDNN(object):
         hidden_layers=1,
         hidden_neurons=4,
         activation="relu",
-        loss='evidentialReg', 
-        coupling_coef=1.0, #right now we have alpha = ... v.. so alpha will be coupled in new loss
+        loss="evidentialReg",
+        coupling_coef=1.0,  # right now we have alpha = ... v.. so alpha will be coupled in new loss
         evidential_coef=0.05,
         optimizer="adam",
         loss_weights=None,
@@ -280,9 +282,8 @@ class EvidentialRegressorDNN(object):
         save_path=".",
         model_name="model.h5",
         metrics=None,
-        eps=1e-7 #smallest eps for stable performance with float32s
+        eps=1e-7,  # smallest eps for stable performance with float32s
     ):
-
         self.hidden_layers = hidden_layers
         self.hidden_neurons = hidden_neurons
         self.activation = activation
@@ -293,10 +294,16 @@ class EvidentialRegressorDNN(object):
         self.adam_beta_2 = adam_beta_2
         self.coupling_coef = coupling_coef
         self.evidential_coef = evidential_coef
-        if loss == 'evidentialReg': #retains backwards compatibility since default without loss arg is original loss
+        if (
+            loss == "evidentialReg"
+        ):  # retains backwards compatibility since default without loss arg is original loss
             self.loss = EvidentialRegressionLoss(coeff=self.evidential_coef)
-        elif loss == 'evidentialFix': # by default we do not regularize this loss as per meinert and lavin
-            self.loss = EvidentialRegressionFixLoss(coeff=self.evidential_coef, r=self.coupling_coef)
+        elif (
+            loss == "evidentialFix"
+        ):  # by default we do not regularize this loss as per meinert and lavin
+            self.loss = EvidentialRegressionFixLoss(
+                coeff=self.evidential_coef, r=self.coupling_coef
+            )
         else:
             raise ValueError("loss needs to be one of evidentialReg or evidentialFix")
 
@@ -360,7 +367,9 @@ class EvidentialRegressorDNN(object):
                 nn_model = GaussianNoise(self.noise_sd, name=f"ganoise_h_{h:02d}")(
                     nn_model
                 )
-        nn_model = DenseNormalGamma(outputs, name="DenseNormalGamma", eps = self.eps)(nn_model)
+        nn_model = DenseNormalGamma(outputs, name="DenseNormalGamma", eps=self.eps)(
+            nn_model
+        )
         self.model = Model(nn_input, nn_model)
         if self.optimizer == "adam":
             self.optimizer_obj = Adam(
@@ -394,7 +403,6 @@ class EvidentialRegressorDNN(object):
         workers=1,
         use_multiprocessing=False,
     ):
-
         # self.build_neural_network(x.shape[-1], y.shape[-1])
         self.training_var = [np.var(y[:, i]) for i in range(y.shape[-1])]
         history = self.model.fit(
@@ -455,7 +463,9 @@ class EvidentialRegressorDNN(object):
         _batch_size = self.batch_size if batch_size is None else batch_size
         y_out = self.model.predict(x, batch_size=_batch_size)
         if self.uncertainties:
-            y_out_final = self.calc_uncertainties(y_out, scaler) #todo calc uncertainty for coupled params
+            y_out_final = self.calc_uncertainties(
+                y_out, scaler
+            )  # todo calc uncertainty for coupled params
         else:
             y_out_final = y_out
         return y_out_final
@@ -472,7 +482,9 @@ class EvidentialRegressorDNN(object):
         mu, v, alpha, beta = np.split(preds, 4, axis=-1)
 
         if isinstance(self.loss, EvidentialRegressionFixLoss):
-            v = 2 * (alpha-1) / self.coupling_coef #need to couple this way otherwise alpha could be negative
+            v = (
+                2 * (alpha - 1) / self.coupling_coef
+            )  # need to couple this way otherwise alpha could be negative
         aleatoric = beta / (alpha - 1)
         epistemic = beta / (v * (alpha - 1))
 
@@ -495,8 +507,10 @@ class EvidentialRegressorDNN(object):
         preds = self.model.predict(x, batch_size=_batch_size)
         mu, v, alpha, beta = np.split(preds, 4, axis=-1)
         if isinstance(self.loss, EvidentialRegressionFixLoss):
-            v = 2 * (alpha-1) / self.coupling_coef #need to couple this way otherwise alpha could be negative
-        
+            v = (
+                2 * (alpha - 1) / self.coupling_coef
+            )  # need to couple this way otherwise alpha could be negative
+
         if mu.shape[-1] == 1:
             mu = np.expand_dims(mu, 1)
         if y_scaler is not None:
@@ -545,7 +559,7 @@ class GaussianRegressorDNN(EvidentialRegressorDNN):
                 nn_model = GaussianNoise(self.noise_sd, name=f"ganoise_h_{h:02d}")(
                     nn_model
                 )
-        nn_model = DenseNormal(outputs, eps = self.eps)(nn_model)
+        nn_model = DenseNormal(outputs, eps=self.eps)(nn_model)
         self.model = Model(nn_input, nn_model)
         if self.optimizer == "adam":
             self.optimizer_obj = Adam(
@@ -698,7 +712,6 @@ class CategoricalDNN(object):
         balanced_classes=0,
         steps_per_epoch=0,
     ):
-
         self.hidden_layers = hidden_layers
         self.hidden_neurons = hidden_neurons
         self.activation = activation
@@ -793,14 +806,12 @@ class CategoricalDNN(object):
         self.model.compile(optimizer=self.optimizer_obj, loss=self.loss)
 
     def fit(self, x_train, y_train, validation_data=None):
-
         inputs = x_train.shape[-1]
 
-        if self.loss == 'dirichletIP':
+        if self.loss == "dirichletIP":
             outputs = y_train.shape[-1] // 2
         else:
             outputs = y_train.shape[-1]
-       
 
         if self.loss == "dirichlet":
             for callback in self.callbacks:
@@ -814,7 +825,7 @@ class CategoricalDNN(object):
                 raise OSError(
                     "The ReportEpoch callback needs to be used in order to run the evidential model."
                 )
-            
+
         if self.loss == "dirichletIP":
             for callback in self.callbacks:
                 if isinstance(callback, ReportEpoch):
@@ -827,7 +838,7 @@ class CategoricalDNN(object):
                 raise OSError(
                     "The ReportEpoch callback needs to be used in order to run the evidential model."
                 )
-        
+
         self.build_neural_network(inputs, outputs)
         if self.balanced_classes:
             train_idx = np.argmax(y_train, 1)
@@ -943,12 +954,15 @@ class CategoricalDNN(object):
         )  # shape (n_samples,)
         return pred_probs, epistemic_variance, entropy, mutual_info
 
-    def compute_uncertainties(self, y_pred, num_classes=4): 
+    def compute_uncertainties(self, y_pred, num_classes=4):
         return calc_prob_uncertainty(y_pred, num_classes=num_classes)
+
 
 def calc_prob_uncertainty(y_pred, num_classes=4):
     evidence = tf.nn.relu(y_pred)
-    alpha = evidence + num_classes #compatible with IP loss because requiring that prior needs to sum to K
+    alpha = (
+        evidence + num_classes
+    )  # compatible with IP loss because requiring that prior needs to sum to K
     S = tf.keras.backend.sum(alpha, axis=1, keepdims=True)
     u = num_classes / S
     prob = alpha / S
