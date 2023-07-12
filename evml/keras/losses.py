@@ -198,14 +198,13 @@ class DirichletInformedPriorLoss(tf.keras.losses.Loss):
 
 
 class EvidentialRegressionCoupledLoss(tf.keras.losses.Loss):
-    def __init__(self, r=1.0, coeff=1.0):
+    def __init__(self, r=1.0):
         """
         implementation of the loss from meinert and lavin that fixes issues with the original
         evidential loss for regression. The loss couples the virtual evidence values with coefficient r.
         In this new loss, the regularizer is unneccessary.
         """
         super(EvidentialRegressionCoupledLoss, self).__init__()
-        self.coeff = coeff
         self.r = r
 
     def NIG_NLL(self, y, gamma, v, alpha, beta, reduce=True):
@@ -222,17 +221,6 @@ class EvidentialRegressionCoupledLoss(tf.keras.losses.Loss):
 
         return tf.reduce_mean(nll) if reduce else nll
 
-    def NIG_Reg(self, y, gamma, v, alpha, reduce=True):
-        error = tf.abs(
-            y - gamma
-        )  # can try squared loss here to target the right minimizer
-        evi = (
-            v + 2 * alpha
-        )  # new paper: = v + 2 * alpha, can try to change this to just 2alpha
-        reg = error * evi
-
-        return tf.reduce_mean(reg) if reduce else reg
-
     def call(self, y_true, evidential_output):
         gamma, v, alpha, beta = tf.split(evidential_output, 4, axis=-1)
         v = (
@@ -240,11 +228,9 @@ class EvidentialRegressionCoupledLoss(tf.keras.losses.Loss):
         )  # need to couple this way otherwise alpha could be negative
 
         loss_nll = self.NIG_NLL(y_true, gamma, v, alpha, beta)
-        loss_reg = self.NIG_Reg(y_true, gamma, v, alpha)
-
-        return loss_nll + self.coeff * loss_reg
+        return loss_nll
 
     def get_config(self):
         config = super(EvidentialRegressionCoupledLoss, self).get_config()
-        config.update({"r": self.r, "coeff": self.coeff})
+        config.update({"r": self.r})
         return config

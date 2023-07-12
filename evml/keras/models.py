@@ -283,6 +283,7 @@ class EvidentialRegressorDNN(object):
         model_name="model.h5",
         metrics=None,
         eps=1e-7,
+        eps_v=1e-7,
         reduce=True  # smallest eps for stable performance with float32s
     ):
         self.hidden_layers = hidden_layers
@@ -302,10 +303,8 @@ class EvidentialRegressorDNN(object):
             self.loss = EvidentialRegressionLoss(coeff=self.evidential_coef, reduce=self.reduce)
         elif (
             loss == "evidentialCoupled"
-        ):  # by default we do not regularize this loss as per meinert and lavin
-            self.loss = EvidentialRegressionCoupledLoss(
-                coeff=self.evidential_coef, r=self.coupling_coef
-            )
+        ):  # by default we should not regularize this loss as per meinert and lavin
+            self.loss = EvidentialRegressionCoupledLoss(r=self.coupling_coef)
         else:
             raise ValueError("loss needs to be one of evidentialReg or evidentialCoupled")
 
@@ -330,6 +329,7 @@ class EvidentialRegressorDNN(object):
         self.training_var = None
         self.metrics = metrics
         self.eps = eps
+        self.eps_v = eps_v
 
     def build_neural_network(self, inputs, outputs):
         """
@@ -488,7 +488,8 @@ class EvidentialRegressorDNN(object):
                 2 * (alpha - 1) / self.coupling_coef
             )  # need to couple this way otherwise alpha could be negative
         # try clipping
-        #v = tf.math.maximum(v, self.eps)
+        v = np.clip(v, self.eps_v, None)
+
         aleatoric = beta / (alpha - 1) #see how these terms vary with x cubed plot
         epistemic = beta / (v * (alpha - 1))
 
@@ -515,8 +516,8 @@ class EvidentialRegressorDNN(object):
                 2 * (alpha - 1) / self.coupling_coef
             )  # need to couple this way otherwise alpha could be negative
 
-        if mu.shape[-1] == 1:
-            mu = np.expand_dims(mu, 1)
+        #if mu.shape[-1] == 1:
+        #    mu = np.expand_dims(mu, 1)
         if y_scaler is not None:
             mu = y_scaler.inverse_transform(mu)
 
