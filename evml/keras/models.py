@@ -9,7 +9,7 @@ from tensorflow.keras.optimizers import Adam, SGD
 from evml.keras.layers import DenseNormalGamma, DenseNormal
 from evml.keras.losses import (
     EvidentialRegressionLoss,
-    EvidentialRegressionFixLoss,
+    EvidentialRegressionCoupledLoss,
     GaussianNLL,
 )
 from evml.keras.losses import DirichletEvidentialLoss, DirichletInformedPriorLoss
@@ -260,7 +260,7 @@ class EvidentialRegressorDNN(object):
         hidden_neurons=4,
         activation="relu",
         loss="evidentialReg",
-        coupling_coef=1.0,  # right now we have alpha = ... v.. so alpha will be coupled in new loss
+        coupling_coef=1.0,  # right now we have v = ... alpha .. so v will be coupled in new loss
         evidential_coef=0.05,
         optimizer="adam",
         loss_weights=None,
@@ -282,7 +282,8 @@ class EvidentialRegressorDNN(object):
         save_path=".",
         model_name="model.h5",
         metrics=None,
-        eps=1e-7,  # smallest eps for stable performance with float32s
+        eps=1e-7,
+        reduce=True  # smallest eps for stable performance with float32s
     ):
         self.hidden_layers = hidden_layers
         self.hidden_neurons = hidden_neurons
@@ -294,18 +295,19 @@ class EvidentialRegressorDNN(object):
         self.adam_beta_2 = adam_beta_2
         self.coupling_coef = coupling_coef
         self.evidential_coef = evidential_coef
+        self.reduce = reduce
         if (
             loss == "evidentialReg"
         ):  # retains backwards compatibility since default without loss arg is original loss
-            self.loss = EvidentialRegressionLoss(coeff=self.evidential_coef)
+            self.loss = EvidentialRegressionLoss(coeff=self.evidential_coef, reduce=self.reduce)
         elif (
-            loss == "evidentialFix"
+            loss == "evidentialCoupled"
         ):  # by default we do not regularize this loss as per meinert and lavin
-            self.loss = EvidentialRegressionFixLoss(
+            self.loss = EvidentialRegressionCoupledLoss(
                 coeff=self.evidential_coef, r=self.coupling_coef
             )
         else:
-            raise ValueError("loss needs to be one of evidentialReg or evidentialFix")
+            raise ValueError("loss needs to be one of evidentialReg or evidentialCoupled")
 
         self.uncertainties = uncertainties
         self.loss_weights = loss_weights
@@ -465,7 +467,7 @@ class EvidentialRegressorDNN(object):
         if self.uncertainties:
             y_out_final = self.calc_uncertainties(
                 y_out, scaler
-            )  # todo calc uncertainty for coupled params
+            ) 
         else:
             y_out_final = y_out
         return y_out_final
@@ -481,11 +483,11 @@ class EvidentialRegressorDNN(object):
     def calc_uncertainties(self, preds, y_scaler):
         mu, v, alpha, beta = np.split(preds, 4, axis=-1)
 
-        if isinstance(self.loss, EvidentialRegressionFixLoss):
+        if isinstance(self.loss, EvidentialRegressionCoupledLoss):
             v = (
                 2 * (alpha - 1) / self.coupling_coef
             )  # need to couple this way otherwise alpha could be negative
-        aleatoric = beta / (alpha - 1)
+        aleatoric = beta / (alpha - 1) #see how these terms vary with x cubed plot
         epistemic = beta / (v * (alpha - 1))
 
         if len(mu.shape) == 1:
@@ -506,7 +508,7 @@ class EvidentialRegressorDNN(object):
         _batch_size = self.batch_size if batch_size is None else batch_size
         preds = self.model.predict(x, batch_size=_batch_size)
         mu, v, alpha, beta = np.split(preds, 4, axis=-1)
-        if isinstance(self.loss, EvidentialRegressionFixLoss):
+        if isinstance(self.loss, EvidentialRegressionCoupledLoss):
             v = (
                 2 * (alpha - 1) / self.coupling_coef
             )  # need to couple this way otherwise alpha could be negative

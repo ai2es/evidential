@@ -63,29 +63,30 @@ class DirichletEvidentialLoss(tf.keras.losses.Loss):
 
 
 class EvidentialRegressionLoss(tf.keras.losses.Loss):
-    def __init__(self, coeff=1.0):
+    def __init__(self, coeff=1.0, reduce=True):
         super(EvidentialRegressionLoss, self).__init__()
         self.coeff = coeff
+        self.reduce = reduce
 
     def NIG_NLL(self, y, gamma, v, alpha, beta, reduce=True):
         v = tf.math.maximum(v, tf.keras.backend.epsilon())
         twoBlambda = 2 * beta * (1 + v)
         nll = (
-            0.5 * tf.math.log(np.pi / v)
+            0.5 * (tf.math.log(np.pi) - tf.math.log(v))
             - alpha * tf.math.log(twoBlambda)
             + (alpha + 0.5) * tf.math.log(v * (y - gamma) ** 2 + twoBlambda)
             + tf.math.lgamma(alpha)
             - tf.math.lgamma(alpha + 0.5)
         )
 
-        return tf.reduce_mean(nll) if reduce else nll
+        return tf.reduce_mean(nll) if self.reduce else nll
 
     def NIG_Reg(self, y, gamma, v, alpha, reduce=True):
         error = tf.abs(y - gamma)
         evi = 2 * v + alpha
         reg = error * evi
 
-        return tf.reduce_mean(reg) if reduce else reg
+        return tf.reduce_mean(reg) if self.reduce else reg
 
     def call(self, y_true, evidential_output):
         gamma, v, alpha, beta = tf.split(evidential_output, 4, axis=-1)
