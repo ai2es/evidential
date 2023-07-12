@@ -487,6 +487,8 @@ class EvidentialRegressorDNN(object):
             v = (
                 2 * (alpha - 1) / self.coupling_coef
             )  # need to couple this way otherwise alpha could be negative
+        # try clipping
+        #v = tf.math.maximum(v, self.eps)
         aleatoric = beta / (alpha - 1) #see how these terms vary with x cubed plot
         epistemic = beta / (v * (alpha - 1))
 
