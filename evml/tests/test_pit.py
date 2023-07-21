@@ -2,7 +2,6 @@ from evml.pit import pit_histogram, pit_deviation
 import numpy as np
 from scipy.stats import norm
 
-
 def test_pit_dev_ensemble():
     n_samples = 1000
     n_members = 20
@@ -14,19 +13,12 @@ def test_pit_dev_ensemble():
     dev_high = pit_deviation(y_true_high, uniform_ensemble, pred_type="ensemble")
     dev_low = pit_deviation(y_true_low, uniform_ensemble, pred_type="ensemble")
     print(dev_ens, dev_high, dev_low)
-    assert (
-        dev_ens >= 0 and dev_ens < 1
-    ), f"Dev ens ({dev_ens:0.3f}) should be between 0 and 1"
-    assert (
-        dev_ens < dev_high and dev_ens < dev_low
-    ), f"Dev ens ({dev_ens:0.3f}) too high"
-    assert (
-        dev_high == dev_low
-    ), f"Dev high ({dev_high:0.3f})not equal to dev low ({dev_low:0.3f})"
+    assert dev_ens >= 0 and dev_ens < 1, f"Dev ens ({dev_ens:0.3f}) should be between 0 and 1"
+    assert dev_ens < dev_high and dev_ens < dev_low, f"Dev ens ({dev_ens:0.3f}) too high"
+    assert dev_high == dev_low , f"Dev high ({dev_high:0.3f})not equal to dev low ({dev_low:0.3f})"
     return
 
-
-def test_pit_dev_gaussian():
+def test_pit_dev_gaussian(): 
     n_samples = 1000
     g_preds = np.zeros((n_samples, 2))
     g_preds[:, 0] = np.random.random(n_samples) * 4 - 2
@@ -39,6 +31,4 @@ def test_pit_dev_gaussian():
     dev_rand = pit_deviation(y_true_random, g_preds, pred_type="gaussian")
     dev_high = pit_deviation(y_true_high, g_preds, pred_type="gaussian")
     print(dev_rand, dev_high)
-    assert (
-        dev_rand < dev_high
-    ), f"Dev rand ({dev_rand:0.3f}) is higher than dev high ({dev_high:0.3f})"
+    assert dev_rand < dev_high, f"Dev rand ({dev_rand:0.3f}) is higher than dev high ({dev_high:0.3f})" 

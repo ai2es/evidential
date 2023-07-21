@@ -142,7 +142,7 @@ def calibration(
 
     if save_location:
         plt.savefig(
-            os.path.join(save_location, "mae_versus_coverage.pdf"),
+            os.path.join(save_location, "mae_versus_coverage.png"),
             dpi=300,
             bbox_inches="tight",
         )
@@ -159,6 +159,7 @@ def plot_uncertainties(
     fontsize=10,
     save_location=None,
 ):
+
     width = 5 if len(output_cols) == 1 else 10
     height = 3.5 if len(output_cols) == 1 else 3.5
     fig, axs = plt.subplots(1, len(output_cols), figsize=(width, height))
@@ -173,15 +174,15 @@ def plot_uncertainties(
         # Calculate the mean prediction for the current column
         aleatoric = ale[:, i]
         epistemic = epi[:, i]
-
+        
         # Remove any NaNs
         aleatoric = aleatoric[np.isfinite(aleatoric)]
         epistemic = epistemic[np.isfinite(epistemic)]
 
         # Create the 2D histogram plot
         my_range = [
-            [np.percentile(epistemic, 0), np.percentile(epistemic, 98)],
-            [np.percentile(aleatoric, 0), np.percentile(aleatoric, 98)],
+            [np.percentile(epistemic, 5), np.percentile(epistemic, 95)],
+            [np.percentile(aleatoric, 5), np.percentile(aleatoric, 95)],
         ]
         hb = axs[i].hist2d(
             epistemic, aleatoric, bins=num_bins, cmap="inferno", range=my_range
@@ -208,7 +209,7 @@ def plot_uncertainties(
 
     if save_location:
         plt.savefig(
-            os.path.join(save_location, "compare_uncertanties.pdf"),
+            os.path.join(save_location, "compare_uncertanties.png"),
             dpi=300,
             bbox_inches="tight",
         )
@@ -285,7 +286,7 @@ def plot_uncertainties(
 
 #     if save_location:
 #         plt.savefig(
-#             os.path.join(save_location, "spread_skill.pdf"),
+#             os.path.join(save_location, "spread_skill.png"),
 #             dpi=300,
 #             bbox_inches="tight",
 #         )
@@ -376,17 +377,16 @@ def plot_skill_score(
     unc_lab = ["Aleatoric", "Epistemic", "Total"]
 
     for j in range(num_outputs):
+
         y_tot = np.sqrt(y_ale**2 + y_epi**2)
 
         for i, std in enumerate([y_ale, y_epi, y_tot]):
+
             # Compute the skill score
             not_nan = np.isfinite(y_pred[:, j]) & np.isfinite(std[:, j])
-
+            
             ss, counts, bins = compute_skill_score(
-                y_true[:, j][not_nan],
-                y_pred[:, j][not_nan],
-                std[:, j][not_nan],
-                num_bins,
+                y_true[:, j][not_nan], y_pred[:, j][not_nan], std[:, j][not_nan], num_bins
             )
 
             # Compute bin centers
@@ -431,7 +431,7 @@ def plot_skill_score(
     plt.tight_layout()
     if save_location:
         plt.savefig(
-            os.path.join(save_location, "spread_skill.pdf"),
+            os.path.join(save_location, "spread_skill.png"),
             dpi=300,
             bbox_inches="tight",
         )
@@ -481,7 +481,7 @@ def discard_fraction(df, output_cols, legend_cols, save_location=False):
 
     if save_location:
         plt.savefig(
-            os.path.join(save_location, "discard_fraction.pdf"),
+            os.path.join(save_location, "discard_fraction.png"),
             dpi=300,
             bbox_inches="tight",
         )
@@ -557,7 +557,7 @@ def regression_attributes(df, output_cols, legend_cols, nbins=11, save_location=
     plt.tight_layout()
     if save_location:
         plt.savefig(
-            os.path.join(save_location, "regression_attributes.pdf"),
+            os.path.join(save_location, "regression_attributes.png"),
             dpi=300,
             bbox_inches="tight",
         )
@@ -573,6 +573,7 @@ def pit_figure_gaussian(
     legend_cols=["Friction velocity", "Sensible heat", "Latent heat"],
     save_location=None,
 ):
+
     # Create the figure and subplot
     fig, axs = plt.subplots(1, 3, figsize=(10, 3.5), sharey="col")
 
@@ -580,8 +581,10 @@ def pit_figure_gaussian(
     total = aleatoric + epistemic
 
     for j, uq in enumerate([aleatoric, epistemic, total]):
+
         # Loop over the output columns and plot the histograms
         for i, col in enumerate(output_cols):
+
             bin_counts, bin_edges = pit_histogram(
                 df[col].values,
                 np.stack([mu[:, i], np.sqrt(uq[:, i])], -1),
@@ -627,7 +630,7 @@ def pit_figure_gaussian(
     # Save
     if save_location:
         plt.savefig(
-            os.path.join(save_location, "pit_histogram_gaussian.pdf"),
+            os.path.join(save_location, "pit_histogram_gaussian.png"),
             dpi=300,
             bbox_inches="tight",
         )
@@ -641,6 +644,7 @@ def pit_figure_ensemble(
     title="Ensemble",
     save_location=None,
 ):
+
     # Create the figure and subplot
     fig, axs = plt.subplots(1, 1, figsize=(5, 3.5), sharey="col")
 
@@ -648,6 +652,7 @@ def pit_figure_ensemble(
 
     # Loop over the output columns and plot the histograms
     for i, col in enumerate(output_cols):
+
         bin_counts, bin_edges = pit_histogram(
             df[col].values, mu[i], pred_type="ensemble", bins=np.linspace(0, 1, 10)
         )
@@ -689,7 +694,7 @@ def pit_figure_ensemble(
     # Save
     if save_location:
         plt.savefig(
-            os.path.join(save_location, "pit_histogram_ensemble.pdf"),
+            os.path.join(save_location, "pit_histogram_ensemble.png"),
             dpi=300,
             bbox_inches="tight",
         )

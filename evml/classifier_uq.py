@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def uq_results(df, save_location=None, prefix=None):
+
     true_labels = df["true_label"].values
     pred_probs = df[[f"pred_conf{k+1}" for k in range(4)]].values
 
@@ -38,7 +39,7 @@ def uq_results(df, save_location=None, prefix=None):
             x_labels=["Epistemic", "Entropy"],
             y_labels=["Aleatoric", "Total"],
             num_bins=20,
-            save_location=save_location,
+            save_location=save_location
         )
     else:
         plot_uncertainties(
@@ -48,7 +49,7 @@ def uq_results(df, save_location=None, prefix=None):
             x_labels=["Epistemic", "Evidential"],
             y_labels=["Aleatoric", "Total"],
             num_bins=20,
-            save_location=save_location,
+            save_location=save_location
         )
 
     # Create reliability diagrams for each class
@@ -80,17 +81,17 @@ def uq_results(df, save_location=None, prefix=None):
     )
 
 
-def sort_arr(true_labels, pred_probs, confidences, n_bins=10):
+def sort_arr(true_labels, pred_probs, confidences, n_bins=10, data_min = False, data_max = False):
+    
     # Compute the minimum and maximum values
-    data_min = np.min(confidences)
-    data_max = np.max(confidences)
+    if not data_min:
+        data_min = np.min(confidences)
+    if not data_max:
+        data_max = np.max(confidences)
 
     # Compute the range and standard deviation
     data_range = data_max - data_min
     data_std = np.std(confidences)
-
-    # Define the number of bins
-    n_bins = 10
 
     # Use np.geomspace if the range of values is large compared to the standard deviation
     if data_range > 10 * data_std:
@@ -173,6 +174,7 @@ def plot_uncertainties(
     fontsize=10,
     save_location=None,
 ):
+
     width = 5 if len(output_cols) == 1 else 10
     height = 3.5 if len(output_cols) == 1 else 3.5
     fig, axs = plt.subplots(1, len(output_cols), figsize=(width, height))
@@ -184,7 +186,7 @@ def plot_uncertainties(
 
     not_nan = np.isfinite(df[input_cols + output_cols])
     df = df[not_nan].copy()
-
+    
     # Loop over each element in output_cols and create a hexbin plot
     for i, (i_col, o_col) in enumerate(zip(input_cols, output_cols)):
         # Calculate the mean prediction for the current column
@@ -250,6 +252,7 @@ def classifier_attribution(
     save_location=False,
     prefix=False,
 ):
+
     fig, axs = plt.subplots(2, 4, figsize=(10, 5), sharey="row", sharex="col")
     confidences = np.max(pred_probs, axis=1)
 
@@ -341,6 +344,7 @@ def classifier_skill_scores(
     save_location=False,
     prefix=False,
 ):
+
     fig, axs = plt.subplots(1, 4, figsize=(10, 3.5), sharey="row")
 
     for k, uq in enumerate([aleatoric, epistemic, total, evidential]):
@@ -391,11 +395,13 @@ def classifier_discard_fraction(
     save_location=False,
     prefix=False,
 ):
+
     fig, axs = plt.subplots(1, 4, figsize=(10, 5), sharey="row")
     db = (1.0 / num_classes) * num_bins
     # df["total"] = np.sqrt(df["aleatoric"] + df["epistemic"])
 
     for k, uq in enumerate(uncertainty_cols):
+
         dg = df.copy().sort_values(uq)
 
         for class_label in range(num_classes):

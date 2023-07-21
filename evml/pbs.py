@@ -3,7 +3,7 @@ import subprocess
 import yaml
 
 
-def launch_pbs_jobs(config_file, trainer_path, args=""):
+def launch_pbs_jobs(config_file, trainer_path, args = ''):
     # Load configuration file
     with open(config_file, "r") as f:
         config = yaml.safe_load(f)
