@@ -259,7 +259,7 @@ class EvidentialRegressorDNN(object):
         hidden_layers=1,
         hidden_neurons=4,
         activation="relu",
-        loss="evidentialReg",
+        loss="evidentialReg", #evidentialReg or evidentialCoupled
         coupling_coef=1.0,  # right now we have v = ... alpha .. so v will be coupled in new loss
         evidential_coef=0.05,
         optimizer="adam",
