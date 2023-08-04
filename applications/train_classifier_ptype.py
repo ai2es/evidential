@@ -17,6 +17,7 @@ from argparse import ArgumentParser
 
 from ptype.callbacks import MetricsCallback
 from ptype.data import load_ptype_data_day, preprocess_data
+from sklearn.model_selection import GroupShuffleSplit
 
 from evml.keras.callbacks import get_callbacks, ReportEpoch
 from evml.keras.models import CategoricalDNN
@@ -30,6 +31,69 @@ warnings.filterwarnings("ignore")
 logger = logging.getLogger(__name__)
 
 
+def load_ptype_uq(conf, data_split=0, verbose=0, drop_mixed=False):
+
+    # Load
+    df = pd.read_parquet(conf["data_path"])
+
+    # Drop mixed cases
+    if drop_mixed:
+        logger.info("Dropping data points with mixed observations")
+        c1 = df["ra_percent"] == 1.0
+        c2 = df["sn_percent"] == 1.0
+        c3 = df["pl_percent"] == 1.0
+        c4 = df["fzra_percent"] == 1.0
+        condition = c1 | c2 | c3 | c4
+        df = df[condition].copy()
+
+    # QC-Filter
+    qc_value = str(conf["qc"])
+    cond1 = df[f"wetbulb{qc_value}_filter"] == 0.0
+    cond2 = df["usa"] == 1.0
+    dg = df[cond1 & cond2].copy()
+
+    dg["day"] = dg["datetime"].apply(lambda x: str(x).split(" ")[0])
+    dg["id"] = range(dg.shape[0])
+
+    # Select test cases
+    test_days_c1 = dg["day"].isin(
+        [day for case in conf["case_studies"].values() for day in case]
+    )
+    test_days_c2 = dg["day"] >= conf["test_cutoff"]
+    test_condition = test_days_c1 | test_days_c2
+
+    # Partition the data into trainable-only and test-only splits
+    train_data = dg[~test_condition].copy()
+    test_data = dg[test_condition].copy()
+
+    # Make N train-valid splits using day as grouping variable, return "data_split" split
+    gsp = GroupShuffleSplit(
+        n_splits=conf["ensemble"]["n_splits"],
+        random_state=conf["seed"],
+        train_size=conf["train_size1"],
+    )
+    splits = list(gsp.split(train_data, groups=train_data["day"]))
+
+    train_index, valid_index = splits[data_split]
+    train_data, valid_data = (
+        train_data.iloc[train_index].copy(),
+        train_data.iloc[valid_index].copy(),
+    )
+
+    size = df.shape[0]
+    logger.info("Train, validation, and test fractions:")
+    logger.info(
+        f"{train_data.shape[0]/size}, {valid_data.shape[0]/size}, {test_data.shape[0]/size}"
+    )
+    print(
+        f"{train_data.shape[0]/size}, {valid_data.shape[0]/size}, {test_data.shape[0]/size}"
+    )
+
+    data = {"train": train_data, "val": valid_data, "test": test_data}
+
+    return data
+
+
 class Objective(BaseObjective):
     def __init__(self, config, metric="val_loss"):
 
@@ -39,7 +103,7 @@ class Objective(BaseObjective):
     def train(self, trial, conf):
         K.clear_session()
         gc.collect()
-        conf["n_splits"] = 1
+        conf["ensemble"]["n_splits"] = 1
         if "CSVLogger" in conf["callbacks"]:
             del conf["callbacks"]["CSVLogger"]
         if "ModelCheckpoint" in conf["callbacks"]:
@@ -49,7 +113,14 @@ class Objective(BaseObjective):
         try:
             return {self.metric: trainer(conf, evaluate=False)}
         except Exception as E:
-            if "Unexpected result" in str(E) or "CUDA" in str(E):
+            if (
+                "Unexpected result" in str(E)
+                or "CUDA" in str(E)
+                or "FAILED_PRECONDITION" in str(E)
+                or "CUDA_ERROR_ILLEGAL_ADDRESS" in str(E)
+                or "ResourceExhaustedError" in str(E)
+                or "Graph execution error" in str(E)
+            ):
                 logger.warning(
                     f"Pruning trial {trial.number} due to unspecified error: {str(E)}."
                 )
@@ -84,10 +155,10 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes=0):
     else:
         use_uncertainty = False
     # load data using the split (see n_splits in config)
-    data = load_ptype_data_day(conf, data_split=data_split, verbose=1, drop_mixed=False)
+    data = load_ptype_uq(conf, data_split=data_split, verbose=1, drop_mixed=False)
     # check if we should scale the input data by groups
     scale_groups = [] if "scale_groups" not in conf else conf["scale_groups"]
-    groups = [conf[g] for g in scale_groups]
+    groups = [list(conf[g]) for g in scale_groups]
     leftovers = list(
         set(input_features)
         - set([row for group in scale_groups for row in conf[group]])
@@ -99,7 +170,7 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes=0):
         data,
         input_features,
         output_features,
-        scaler_type="standard",
+        scaler_type=conf["scaler_type"],
         encoder_type="onehot",
         groups=groups,
     )
@@ -107,7 +178,7 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes=0):
     if evaluate:
         os.makedirs(os.path.join(conf["save_loc"], "scalers"), exist_ok=True)
         for scaler_name, scaler in scalers.items():
-            if conf["n_splits"] == 1:
+            if conf["ensemble"]["n_splits"] == 1:
                 fn = os.path.join(conf["save_loc"], "scalers", f"{scaler_name}.json")
             else:
                 fn = os.path.join(
@@ -153,7 +224,7 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes=0):
     # train the model
     history = mlp.fit(scaled_data["train_x"], scaled_data["train_y"])
 
-    if conf["n_splits"] > 1:
+    if conf["ensemble"]["n_splits"] > 1:
         pd_history = pd.DataFrame.from_dict(history.history)
         pd_history["split"] = data_split
         pd_history.to_csv(
@@ -163,8 +234,8 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes=0):
     # Predict on the data splits
     if evaluate:
         # Save the best model when not using ECHO
-        if conf["n_splits"] == 1:
-            mlp.model.save(os.path.join(conf["save_loc"], "models", "model.h5"))
+        if conf["ensemble"]["n_splits"] == 1:
+            mlp.model.save(os.path.join(conf["save_loc"], "models", "best.h5"))
         else:
             mlp.model.save(
                 os.path.join(conf["save_loc"], "models", f"model_{data_split}.h5")
@@ -180,7 +251,7 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes=0):
                 epi = epi.numpy()
             elif mc_forward_passes > 0:  # Compute epistemic uncertainty with MC dropout
                 pred_probs = mlp.predict(x)
-                _, epi, entropy, mutual_info = mlp.predict_monte_carlo(
+                _, ale, epi, entropy, mutual_info = mlp.predict_monte_carlo(
                     x, mc_forward_passes=mc_forward_passes
                 )
             true_labels = np.argmax(data[name][output_features].to_numpy(), 1)
@@ -200,13 +271,16 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes=0):
                     epi, pred_labels[:, None], axis=1
                 )
             elif mc_forward_passes > 0:
+                data[name]["aleatoric"] = np.take_along_axis(
+                    ale, pred_labels[:, None], axis=1
+                )
                 data[name]["epistemic"] = np.take_along_axis(
                     epi, pred_labels[:, None], axis=1
                 )
                 data[name]["entropy"] = entropy
                 data[name]["mutual_info"] = mutual_info
 
-            if conf["n_splits"] == 1:
+            if conf["ensemble"]["n_splits"] == 1:
                 data[name].to_parquet(
                     os.path.join(conf["save_loc"], f"evaluate/{name}.parquet")
                 )
@@ -238,23 +312,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "-l",
         dest="launch",
-        type=str,
+        type=bool,
         default=False,
         help="Launch n_splits number of qsub jobs.",
     )
     parser.add_argument(
         "-s",
         dest="serial",
-        type=str,
+        type=bool,
         default=False,
         help="Whether to parallelize the training over GPUs (default is 0)",
-    )
-    parser.add_argument(
-        "-n",
-        dest="n_splits",
-        type=int,
-        default=1,
-        help="The number of data ensembles to create (n_splits). Default = 1",
     )
     parser.add_argument(
         "-i",
@@ -263,28 +330,24 @@ if __name__ == "__main__":
         default=0,
         help="Which split this node will run (ranges from 0 to n_splits-1)",
     )
-    parser.add_argument(
-        "-m",
-        dest="mc_steps",
-        type=int,
-        default=0,
-        help="The number of MC steps used to create an ensemble (default = 0)",
-    )
 
     args_dict = vars(parser.parse_args())
     config_file = args_dict.pop("model_config")
 
     launch = bool(int(args_dict.pop("launch")))
-    n_splits = int(args_dict.pop("n_splits"))
     this_split = int(args_dict.pop("split_id"))
-    mc_steps = int(args_dict.pop("mc_steps"))
     run_serially = bool(int(args_dict.pop("serial")))
 
     with open(config_file) as cf:
         conf = yaml.load(cf, Loader=yaml.FullLoader)
 
     # If we are running the training and not launching
-    # conf["n_splits"] = n_splits
+    n_splits = conf["ensemble"]["n_splits"]
+    mc_steps = conf["ensemble"]["mc_steps"]
+
+    assert this_split <= (
+        n_splits - 1
+    ), "The worker ID is larger than the number of cross-validation n_splits."
 
     # Create the save directory if does not exist
     save_loc = conf["save_loc"]
@@ -300,16 +363,19 @@ if __name__ == "__main__":
             yaml.dump(conf, fid)
 
     if launch:
+        from pathlib import Path
+
+        script_path = Path(__file__).absolute()
+        logging.info("Launching to PBS")
         if run_serially:
             # If we are running serially, launch only one job
             # set serial flag = True
-            # set launch flag = False
-            pass
+            launch_pbs_jobs(config_file, script_path, args="-s 1")
         else:
             # Launch QSUB jobs and exit
             for split in range(n_splits):
                 # launch_pbs_jobs
-                pass
+                launch_pbs_jobs(config_file, script_path, args=f"-i {split}")
         sys.exit()
 
     # Run in serial over the number of ensembles (one at a time)

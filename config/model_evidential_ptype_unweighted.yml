@@ -1,6 +1,6 @@
 seed: 1000
 verbose: 0
-save_loc: "/glade/p/cisl/aiml/ai2es/winter_ptypes/models/classifier_weighted"
+save_loc: "/glade/p/cisl/aiml/ai2es/winter_ptypes/models/evidential_unweighted"
 asos_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/ASOS_mixture/'
 mping_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/precip_rap/mPING_mixture/'
 data_path: '/glade/p/cisl/aiml/ai2es/winter_ptypes/ptype_qc/mPING_interpolated_QC2.parquet'
@@ -14,29 +14,25 @@ direction: "max"
 
 ensemble:
     n_splits: 20
-    mc_steps: 100
+    mc_steps: 0
 
 model:
     activation: leaky
-    balanced_classes: 1
+    annealing_coeff: 34.593686950910275
+    balanced_classes: 0
     batch_size: 3097
     dropout_alpha: 0.31256692323263807
     epochs: 200
     hidden_layers: 3
     hidden_neurons: 200
-    loss: categorical_crossentropy
-    loss_weights:
-    - 21.465788717561477
-    - 83.31367732936326
-    - 136.50944842077058
-    - 152.62042204485107
+    loss: dirichlet
     lr: 0.0004035503144482269
     optimizer: adam
-    output_activation: softmax
+    output_activation: linear
     use_dropout: 1
     verbose: 0
     
-scaler_type: "quantile" # standard, robust, minmax, quantile, quantile-uniform
+scaler_type: "quantile-uniform"  # standard, robust, minmax, quantile, quantile-uniform
 scale_groups: ["TEMP_C", "T_DEWPOINT_C", "UGRD_m/s", "VGRD_m/s"]
 TEMP_C: [
     'TEMP_C_0_m',
@@ -375,9 +371,9 @@ case_studies:
         '2016-12-19',
         '2016-12-20'
      ]
-     
+
 pbs:
-  name: ptype-mlp
+  name: ptype-ev-unw
   select: 1
   ncpus: 8
   ngpus: 1
@@ -389,4 +385,3 @@ pbs:
   env_setup: |
     source ~/.bashrc 
     conda activate evidential
-    

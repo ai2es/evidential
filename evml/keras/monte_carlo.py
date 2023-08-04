@@ -23,12 +23,12 @@ def monte_carlo_ensemble(model, x_test, y_test, forward_passes, y_scaler=None):
     pred_size = y_test.shape[1]
     dropout_mu = np.zeros((forward_passes, n_samples, pred_size))
     dropout_aleatoric = np.zeros((forward_passes, n_samples, pred_size))
-    
+
     for i in range(forward_passes):
         output = model.model(x_test, training=True)
-        mu, aleatoric  = model.calc_uncertainties(output.numpy(), y_scaler)
-        dropout_mu[i] = mu 
-        dropout_aleatoric[i] = aleatoric 
+        mu, aleatoric = model.calc_uncertainties(output.numpy(), y_scaler)
+        dropout_mu[i] = mu
+        dropout_aleatoric[i] = aleatoric
 
     # Calculating mean across multiple MCD forward passes
     mu = np.mean(dropout_mu, axis=0)  # shape (n_samples, n_classes)
@@ -41,6 +41,6 @@ def monte_carlo_ensemble(model, x_test, y_test, forward_passes, y_scaler=None):
 
 def reset_weights(model):
     session = K.get_session()
-    for layer in model.layers: 
-        if hasattr(layer, 'kernel_initializer'):
+    for layer in model.layers:
+        if hasattr(layer, "kernel_initializer"):
             layer.kernel.initializer.run(session=session)
