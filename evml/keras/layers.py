@@ -1,6 +1,6 @@
 import tensorflow as tf
 import numpy as np
-import tensorflow_addons as tfa
+#import tensorflow_addons as tfa
 
 
 #eps = np.finfo(np.float32).eps
@@ -16,7 +16,7 @@ class DenseNormalGamma(tf.keras.layers.Layer):
     def __init__(self, units, name, eps=1e-12, **kwargs):
         super(DenseNormalGamma, self).__init__(name=name, **kwargs)
         self.units = int(units)
-        self.dense = tfa.layers.SpectralNormalization(tf.keras.layers.Dense(4 * self.units, activation=None))
+        self.dense = tf.keras.layers.SpectralNormalization(tf.keras.layers.Dense(4 * self.units, activation=None))
         self.eps = eps
 
     def evidence(self, x):
@@ -44,7 +44,7 @@ class DenseNormal(tf.keras.layers.Layer):
     def __init__(self, units, eps=1e-12):
         super(DenseNormal, self).__init__()
         self.units = int(units)
-        self.dense = tfa.layers.SpectralNormalization(tf.keras.layers.Dense(2 * self.units, activation = "sigmoid"))
+        self.dense = tf.keras.layers.SpectralNormalization(tf.keras.layers.Dense(2 * self.units, activation = "sigmoid"))
         self.eps = eps
 
     def call(self, x):
