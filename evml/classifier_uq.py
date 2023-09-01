@@ -125,7 +125,7 @@ def brier_multi(targets, probs, num_classes=4, skill_score=True):
     one_hot = np.zeros((targets.size, num_classes))
     one_hot[np.arange(targets.size), targets] = 1
     # Compute MSE with one-hots and probabilities
-    res = np.mean(np.sum((probs - one_hot) ** 2, axis=1))
+    res = np.mean((probs - one_hot) ** 2, axis=1)
 
     if skill_score:
         tot = np.mean(np.sum((one_hot - np.mean(one_hot)) ** 2, axis=1))
@@ -134,7 +134,7 @@ def brier_multi(targets, probs, num_classes=4, skill_score=True):
         return res
 
 
-def brier_skill_score_multiclass(true_labels, pred_probs):
+def brier_skill_score_multiclass(true_labels, pred_probs, skill_score=True):
     num_classes = len(set(true_labels))
     bss_sum = 0
 
@@ -154,7 +154,10 @@ def brier_skill_score_multiclass(true_labels, pred_probs):
         bs_ref = brier_score_loss(binary_labels, ref_probs)
 
         # Calculate Brier Skill Score for this class and add to the sum
-        bss = 1 - (bs / bs_ref)
+        if skill_score:
+            bss = 1 - (bs / bs_ref)
+        else:
+            bss = bs
         bss_sum += bss
 
     # Average the Brier Skill Scores over all classes

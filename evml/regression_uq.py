@@ -437,7 +437,7 @@ def plot_skill_score(
         )
 
 
-def discard_fraction(df, output_cols, legend_cols, save_location=False):
+def discard_fraction(df, output_cols, legend_cols, save_location=False, fontsize=10):
     width = 7 if len(output_cols) == 1 else 10
     height = 3.5
     fig, axs = plt.subplots(1, len(output_cols), figsize=(width, height))
@@ -473,7 +473,7 @@ def discard_fraction(df, output_cols, legend_cols, save_location=False):
             color=colors[2],
         )
         axs[k].set_xlabel("Fraction removed")
-        axs[k].set_title(legend_cols[k])
+        axs[k].set_title(legend_cols[k], fontsize=fontsize)
         axs[k].legend(["Epistemic", "Aleatoric", "Total"], loc="best")
 
     axs[0].set_ylabel("RMSE")
@@ -487,7 +487,7 @@ def discard_fraction(df, output_cols, legend_cols, save_location=False):
         )
 
 
-def regression_attributes(df, output_cols, legend_cols, nbins=11, save_location=False):
+def regression_attributes(df, output_cols, legend_cols, nbins=11, save_location=False, fontsize=10):
     width = 7 if len(output_cols) == 1 else 10
     height = 3.5
     fig, axs = plt.subplots(1, len(output_cols), figsize=(width, height))
@@ -550,7 +550,7 @@ def regression_attributes(df, output_cols, legend_cols, nbins=11, save_location=
             color="lightblue",
         )
 
-        axs[k].set_title(f"{legend_cols[k]}")
+        axs[k].set_title(f"{legend_cols[k]}", fontsize=fontsize)
         axs[k].set_ylabel("Conditional mean observation")
         axs[k].set_xlabel("Prediction")
 
