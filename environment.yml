@@ -24,6 +24,7 @@ dependencies:
   - cython
   - pip:
     - tensorflow
+    - tensorflow_addons
     - pyarrow
     - fastparquet
     - imblearn
