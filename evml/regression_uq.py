@@ -1,10 +1,15 @@
-import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from collections import defaultdict
 import os
 from sklearn.metrics import brier_score_loss
 from evml.pit import pit_histogram
+from matplotlib.colors import LogNorm
+import properscoring as ps 
+import pandas as pd
+import numpy as np
+from sklearn.metrics import mean_squared_error, r2_score
+from math import sqrt
 
 
 def compute_results(
@@ -40,6 +45,9 @@ def compute_results(
         legend_cols=legend_cols,
         save_location=fn,
     )
+    
+    # Make 1D versions for total sigma
+    rmse_crps_skill_scores(output_cols, df, mu, aleatoric, epistemic, legend_cols, save_location=fn)
 
     # Compute attributes figure
     regression_attributes(df, output_cols, legend_cols, save_location=fn)
@@ -437,7 +445,7 @@ def plot_skill_score(
         )
 
 
-def discard_fraction(df, output_cols, legend_cols, save_location=False):
+def discard_fraction(df, output_cols, legend_cols, save_location=False, fontsize=10):
     width = 7 if len(output_cols) == 1 else 10
     height = 3.5
     fig, axs = plt.subplots(1, len(output_cols), figsize=(width, height))
@@ -473,7 +481,7 @@ def discard_fraction(df, output_cols, legend_cols, save_location=False):
             color=colors[2],
         )
         axs[k].set_xlabel("Fraction removed")
-        axs[k].set_title(legend_cols[k])
+        axs[k].set_title(legend_cols[k], fontsize=fontsize)
         axs[k].legend(["Epistemic", "Aleatoric", "Total"], loc="best")
 
     axs[0].set_ylabel("RMSE")
@@ -487,7 +495,7 @@ def discard_fraction(df, output_cols, legend_cols, save_location=False):
         )
 
 
-def regression_attributes(df, output_cols, legend_cols, nbins=11, save_location=False):
+def regression_attributes(df, output_cols, legend_cols, nbins=11, save_location=False, fontsize=10):
     width = 7 if len(output_cols) == 1 else 10
     height = 3.5
     fig, axs = plt.subplots(1, len(output_cols), figsize=(width, height))
@@ -550,7 +558,7 @@ def regression_attributes(df, output_cols, legend_cols, nbins=11, save_location=
             color="lightblue",
         )
 
-        axs[k].set_title(f"{legend_cols[k]}")
+        axs[k].set_title(f"{legend_cols[k]}", fontsize=fontsize)
         axs[k].set_ylabel("Conditional mean observation")
         axs[k].set_xlabel("Prediction")
 
@@ -695,6 +703,125 @@ def pit_figure_ensemble(
     if save_location:
         plt.savefig(
             os.path.join(save_location, "pit_histogram_ensemble.png"),
+            dpi=300,
+            bbox_inches="tight",
+        )
+
+        
+def calculate_skill_score(y_true, y_pred, sigma, num_bins=10, log = False, filter_top_percentile = 5):
+    # Create a DataFrame from the provided data
+    try:
+        df = pd.DataFrame({'y_true': y_true[:,0], 'y_pred': y_pred[:,0], 'sigma': sigma[:,0]})
+    except:
+        df = pd.DataFrame({'y_true': y_true, 'y_pred': y_pred, 'sigma': sigma})
+        
+    # Dont use NaNs
+    df=df[np.isfinite(df['sigma'])].copy()
+    
+    # Create bins based on the 'sigma' column
+    if log:
+        df['bin'] = pd.cut(np.log(df['sigma']), bins=num_bins)
+    else:
+        df['bin'] = pd.cut(df['sigma'], bins=num_bins)
+        
+    # Calculate the threshold for the top N% based on 'sigma'
+    threshold = np.percentile(df['sigma'], 100 - filter_top_percentile)
+    
+    # Filter the DataFrame to keep only data points below the threshold
+    df = df[df['sigma'] <= threshold]
+    
+    # Initialize an empty DataFrame to store results
+    result_df = pd.DataFrame(columns=['bin', 'rmse', 'crps', 'count'])
+    
+    # Iterate over each bin
+    for bin_name, bin_group in df.groupby('bin'):
+        
+        if len(bin_group["y_true"]) ==0 or len(bin_group["y_pred"]) ==0:
+            continue
+        
+        # Calculate RMSE for the points within the bin
+        rmse = np.sqrt(mean_squared_error(bin_group['y_true'], bin_group['y_pred']))
+        
+        # Calculate R2 score for the points within the bin
+        crps = ps.crps_gaussian(bin_group['y_true'], mu=bin_group['y_pred'], sig=bin_group['sigma']).mean()
+        
+        # Get the left bound of the bin
+        bin_left = bin_name.left
+        if log:
+            bin_left = np.exp(bin_left)
+        
+        # Get the count of data points in the bin
+        count = len(bin_group)
+        
+        # Append the results to the result DataFrame
+        result_df = result_df._append({'bin': bin_left, 'rmse': rmse, 'crps': crps, 'count': count}, ignore_index=True)
+    
+    return result_df
+
+
+def rmse_crps_skill_scores(output_cols, df, mu, aleatoric, epistemic, titles, save_location=None):
+    # Create a grid of subplots with the number of rows determined by the length of output_cols
+    num_cols = len(output_cols)
+    num_rows = 2  # You can adjust the number of rows as needed
+    fig, axes = plt.subplots(num_rows, num_cols, figsize=(10, 7))
+
+    # Loop over the length of output_cols
+    for col in range(num_cols):
+        result = calculate_skill_score(
+            df[output_cols[col]].values,
+            mu[:, col],
+            np.sqrt(aleatoric[:, col] + epistemic[:, col]),
+            num_bins=100,
+            log=True
+        )
+
+        # Calculate the y-axis limits based on data range
+        x_limit = (0.0, 1.05 * result['bin'].max())
+        y_limit_rmse = (0.95 * result['rmse'].min(), 1.05 * result['rmse'].max())
+        y_limit_crps = (0.95 * result['crps'].min(), 1.05 * result['crps'].max())
+
+        # Check if there is only one column, if so, axes will not be a list
+        if num_cols == 1:
+            ax_rmse = axes[0]
+            ax_crps = axes[1]
+        else:
+            ax_rmse = axes[0, col]
+            ax_crps = axes[1, col]
+
+        # Plot RMSE on the left subplot
+        sc_rmse = ax_rmse.scatter(result['bin'], result['rmse'], c=result['count'], cmap='viridis', alpha=0.5, norm=LogNorm())
+        if col == 0:
+            ax_rmse.set_ylabel('RMSE')
+        ax_rmse.plot(result['bin'], result['bin'], c="k", ls="--")
+        ax_rmse.set_title(titles[col], fontsize=10)
+
+        # Set y-axis limits for the RMSE subplot
+        ax_rmse.set_ylim(y_limit_rmse)
+
+        # Plot CRPS on the right subplot
+        sc_crps = ax_crps.scatter(result['bin'], result['crps'], c=result['count'], cmap='viridis', alpha=0.5, norm=LogNorm())
+        ax_crps.set_xlabel(r'$\sigma_{Total}$')
+        ax_crps.set_ylabel('CRPS')
+
+        # Set y-axis limits for the CRPS subplot
+        ax_crps.set_ylim(y_limit_crps)
+
+        # Add colorbar to the right subplot
+        if col == 0:
+            cbar_ax = fig.add_axes([1.01, 0.09, 0.015, 0.88])
+            cbar = fig.colorbar(sc_crps, cax=cbar_ax)
+            cbar.set_label('Count')
+
+        # Plot the 1-1 line in the CRPS subplot
+        ax_crps.plot(result['bin'], result['bin'], c="k", ls="--")
+
+    # Ensure proper spacing between subplots
+    plt.tight_layout()
+    
+    # Save
+    if save_location:
+        plt.savefig(
+            os.path.join(save_location, "rmse_crps_skill.png"),
             dpi=300,
             bbox_inches="tight",
         )

@@ -17,6 +17,7 @@ class DenseNormalGamma(tf.keras.layers.Layer):
         super(DenseNormalGamma, self).__init__(name=name, **kwargs)
         self.units = int(units)
         self.dense = tfa.layers.SpectralNormalization(tf.keras.layers.Dense(4 * self.units, activation=None))
+        #self.dense = tf.keras.layers.Dense(4 * self.units, activation=None)
         self.eps = eps
 
     def evidence(self, x):
@@ -45,6 +46,7 @@ class DenseNormal(tf.keras.layers.Layer):
         super(DenseNormal, self).__init__()
         self.units = int(units)
         self.dense = tfa.layers.SpectralNormalization(tf.keras.layers.Dense(2 * self.units, activation = "sigmoid"))
+        #self.dense = tf.keras.layers.Dense(2 * self.units, activation=None)
         self.eps = eps
 
     def call(self, x):

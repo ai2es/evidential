@@ -270,6 +270,9 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes=0):
                 data[name]["epistemic"] = np.take_along_axis(
                     epi, pred_labels[:, None], axis=1
                 )
+                for k in range(pred_probs.shape[-1]):
+                    data[name][f"aleatoric{k+1}"] = ale[:, k]
+                    data[name][f"epistemic{k+1}"] = epi[:, k]
             elif mc_forward_passes > 0:
                 data[name]["aleatoric"] = np.take_along_axis(
                     ale, pred_labels[:, None], axis=1
@@ -277,6 +280,9 @@ def trainer(conf, evaluate=True, data_split=0, mc_forward_passes=0):
                 data[name]["epistemic"] = np.take_along_axis(
                     epi, pred_labels[:, None], axis=1
                 )
+                for k in range(pred_probs.shape[-1]):
+                    data[name][f"aleatoric{k+1}"] = ale[:, k]
+                    data[name][f"epistemic{k+1}"] = epi[:, k]
                 data[name]["entropy"] = entropy
                 data[name]["mutual_info"] = mutual_info
 

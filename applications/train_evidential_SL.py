@@ -27,6 +27,7 @@ from evml.preprocessing import load_preprocessing
 from evml.keras.seed import seed_everything
 from evml.pbs import launch_pbs_jobs
 from bridgescaler import save_scaler
+from sklearn.metrics import r2_score, mean_squared_error
 
 
 warnings.filterwarnings("ignore")
@@ -177,6 +178,11 @@ def trainer(conf, trial=False):
                 #     )
                 # )
             optimization_metric = np.mean(_pitd)
+        elif "R2" in training_metric:
+            mu, ale, epi = model.predict(x_valid)
+            rmse = (y_valid - mu) ** 2
+            spread = ale + epi
+            optimization_metric = r2_score(rmse, spread)
         elif direction == "min":
             optimization_metric = min(history.history[training_metric])
         elif direction == "max":
